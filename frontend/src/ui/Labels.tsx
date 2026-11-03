@@ -52,7 +52,11 @@ export function LabelProjector() {
   useFrame(() => {
     // incidents are rendered last in the DOM; place them first so they win collisions
     const els = [...document.querySelectorAll<HTMLElement>('[data-anchor]')].reverse()
-    const placed: [number, number, number, number][] = []
+    // HUD panels are translucent glass: treat them as obstacles so labels never bleed through
+    const placed: [number, number, number, number][] = [...document.querySelectorAll('.side, .topbar, .tm, .tools, .inspector, .rail, .toasts > *, .modal-back')]
+      .map((o) => o.getBoundingClientRect())
+      .filter((r) => r.width > 0 && r.height > 0)
+      .map((r) => [r.left, r.top, r.right, r.bottom])
     els.forEach((el) => {
       v.set(Number(el.dataset.x), Number(el.dataset.y), Number(el.dataset.z))
       const dist = camera.position.distanceTo(v)

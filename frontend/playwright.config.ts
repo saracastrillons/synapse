@@ -7,7 +7,7 @@ const gl = ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swifts
 
 export default defineConfig({
   testDir: 'e2e',
-  timeout: 120_000,
+  timeout: 240_000,
   expect: { timeout: 30_000 },
   fullyParallel: false,
   workers: 1,

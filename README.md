@@ -1,107 +1,247 @@
-# SYNAPSE — The Living Digital Twin of Earth
+<div align="center">
 
-**An interactive computational laboratory that turns urban problems into reproducible experiments.**
-Agent-based traffic, emergency response and power-grid simulation on the real OpenStreetMap network of Medellín, Colombia — with an AI copilot that runs simulations to test its own recommendations before it makes them.
+<img src="docs/screenshots/social-preview.png" alt="SYNAPSE — The Living Digital Twin of Earth" width="100%" />
 
-> Pilot city: **Medellín · Centro / La Candelaria** (≈ 2.4 × 3.1 km, 5,592 junctions, 6,151 road segments, 140 signalised intersections, 12 emergency units, 3 substations).
+# SYNAPSE
+
+### The Living Digital Twin of Earth
+
+**An interactive laboratory that turns urban problems into reproducible experiments —
+with an AI agent that tests its own recommendations before it makes them.**
+
+[![CI](https://github.com/saracastrillons/synapse/actions/workflows/ci.yml/badge.svg)](https://github.com/saracastrillons/synapse/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-22d3ee.svg)](LICENSE)
+![Tests](https://img.shields.io/badge/tests-46%20passing-34d399)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
+![React Three Fiber](https://img.shields.io/badge/React%20Three%20Fiber-000000?logo=threedotjs&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![PostGIS](https://img.shields.io/badge/PostGIS%20%2B%20pgRouting-336791?logo=postgresql&logoColor=white)
+![Gemini](https://img.shields.io/badge/Gemini-agent-8E75B2?logo=googlegemini&logoColor=white)
+
+[Features](#-features) · [How it works](#-how-it-works) · [Architecture](#-architecture) · [Run it](#-run-it) · [Testing](#-testing) · [Data honesty](#-data--honesty)
+
+</div>
 
 ---
 
-## What you can do
+SYNAPSE simulates **Medellín Centro (Colombia)** on its real OpenStreetMap road network — 5,592 junctions, 6,151 road segments, 140 signalised intersections, real hospitals, fire stations and substations — with **~1,300 autonomous vehicles**, emergency units and a power grid. You can break the city (block an avenue, trip a substation, unleash a storm), test interventions in controlled experiments, rewind time to change a decision, and ask an AI agent what to do. Every answer it gives is backed by simulations you can re-run with the same seed.
 
-| Module | What it does |
+> **Try asking:** *"A major accident just blocked Avenida Oriental. Find the fastest way to restore traffic flow."*
+> The agent blocks the road, computes the detour with A\* and Dijkstra, simulates four response strategies on identical seeds, ranks them and asks you to confirm the winner.
+
+<p align="center">
+  <img src="docs/screenshots/03-ai-command-center.jpg" alt="AI Command Center recommending a strategy after an accident on Avenida Oriental" width="100%" />
+</p>
+
+## ✨ Features
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**🌍 Earth Command**<br/>
+Holographic globe with 20k land points, data arcs and satellites. Click Medellín and the camera descends from orbit into the city.
+
+</td>
+<td width="50%" valign="top">
+
+**🏙️ City Twin**<br/>
+Roads coloured by live congestion, 7,463 buildings whose windows go dark during blackouts, traffic signals, emergency routes, heatmap, rain and lightning.
+
+</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/01-earth-command.jpg" alt="Earth Command globe" /></td>
+<td><img src="docs/screenshots/02-city-twin.jpg" alt="City twin of Medellín Centro" /></td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+**🧪 Scenario Lab**<br/>
+Six situations (accident, +40 % demand, storm & blackout, ambulance gauntlet, heat wave…). A/B experiments on common random numbers, mean ± sd across seeds, CSV/JSON export, share links and a printable executive report.
+
+</td>
+<td width="50%" valign="top">
+
+**⏪ Time Machine**<br/>
+Rewind to any moment, change a decision and watch the new timeline diverge from the dashed original — deterministic replay guaranteed by tests.
+
+</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/04-scenario-lab.jpg" alt="Scenario Lab A/B results" /></td>
+<td><img src="docs/screenshots/05-time-machine.jpg" alt="Time Machine with branched timelines" /></td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+**⚖️ Compare experiments**<br/>
+Two versions of the city side by side: KPI deltas, time series, pairing warnings and server-side Welch t-tests.
+
+</td>
+<td width="50%" valign="top">
+
+**📱 Works on phones**<br/>
+Responsive HUD: full-screen map, panels one tap away. Verified by end-to-end tests on a Pixel 7 viewport.
+
+</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/06-compare.jpg" alt="Compare experiments modal" /></td>
+<td align="center"><img src="docs/screenshots/07-mobile.jpg" alt="Mobile layout" width="55%" /></td>
+</tr>
+</table>
+
+**Also inside:** autonomous agents with readable decision logs · ETA-optimal ambulance dispatch with signal pre-emption · power grid with storm/overload failures and repair crews · anomaly detection and congestion forecast · accounts, shared projects, versioned scenarios, comments and live collaboration.
+
+## 🧠 How it works
+
+### The simulation engine
+
+A deterministic agent-based engine written in TypeScript, shared by the live 3D view and a Web Worker that runs headless experiments.
+
+| Component | Model |
 |---|---|
-| **Earth Command** | Holographic 3D globe (20k land points, coastlines, data arcs, satellites). Click Medellín and the camera descends into the city. |
-| **City Twin** | 3D city with OSM roads coloured by live congestion, extruded buildings whose windows go dark during blackouts, ~1,300 autonomous vehicles, signals, hospitals, fire stations, substations, heatmap and storm effects. |
-| **Scenario Lab** | Six situations (baseline, +40 % demand, Avenida Oriental accident, storm & blackout, ambulance gauntlet, heat wave). Run an **A/B experiment** with up to 5 seeds, compare 8 KPIs with mean ± sd, export CSV/JSON, share a link, open a printable executive report. |
-| **Time Machine** | Snapshots every 15 simulated seconds. Click the timeline to rewind, change a decision and watch the new branch diverge from the dashed original. |
-| **Autonomous Agents** | Every vehicle has a goal, constraints and a strategy (fixed route vs. live navigation). Click one to follow it and read its decision log. |
-| **AI Command Center** | A **Gemini tool-calling agent** (English & Spanish) that picks among 14 authorised engine tools, runs controlled experiments and explains its recommendation with the measured deltas and a confidence level. Policy changes are only *proposed* — the user confirms them. Falls back to a deterministic on-device planner offline. |
-| **Compare experiments** | Put any two experiments (local or cloud) side by side — two versions of the city — with KPI deltas, time series and server-side Welch t-tests. |
+| Vehicles | Intelligent Driver Model car-following on a lane-level directed graph; personal headway and speed preferences |
+| Navigation | A\* (admissible heuristic) and Dijkstra on live travel times; connected drivers re-plan, others only react to what they see |
+| Junctions | Fixed-time vs **max-pressure** adaptive signals; blackout turns them into all-way stops; emergency pre-emption |
+| Emergencies | Poisson incidents, severity-ordered dispatch minimising A\* ETA over all idle units |
+| Power grid | Substations sized at 122 % of base load, failure hazard from storm² and overload, repair time scales with crews |
+| Analytics | Per-edge z-score anomaly detection, least-squares forecast of the delay index |
 
-Try: *"A major accident just blocked Avenida Oriental. Find the fastest way to restore traffic flow."*
-The copilot blocks the road, computes the detour with A* and Dijkstra, simulates four response strategies on identical seeds, ranks them and lets you apply the winner live.
+Fixed 0.2 s step and a single seeded PRNG stored inside the state: **same seed + parameters + events ⇒ identical run**, in Node and in the browser. Time Machine snapshots are bounded (≈70 MB worst case) and thinned as they age.
 
-## Engineering highlights
+### The AI agent
 
-- **Deterministic engine.** Fixed 0.2 s step, one seeded PRNG stored inside the state, no wall-clock inputs. Same seed + parameters + events ⇒ identical run (verified by tests, and identical between Node and the browser).
-- **Shared engine, two runtimes.** The same TypeScript engine drives the live 3D view and a **Web Worker** that runs batches of headless experiments without dropping frames.
-- **Models:** Intelligent Driver Model car-following on a lane-level directed graph · A* (admissible heuristic) and Dijkstra on live travel times · fixed-time vs **max-pressure** adaptive signals with emergency pre-emption · severity-ordered, ETA-minimising dispatch · substation load/hazard model with repair crews · per-edge z-score anomaly detection · trend forecast of the delay index.
-- **LLM agent with guard-rails.** The API owns the key, the system prompt and the tool catalogue; the browser executes tools on the live twin and returns results to the model. Model-supplied parameters are sanitised (unknown keys dropped, ranges clamped), the loop is step-bounded and rate-limited, and failures degrade to the offline planner.
-- **Experimental rigour.** A/B arms use common random numbers; results report replicate spread and whether the effect has the same sign in every seed.
-- **Data pipeline** (`pipeline/`): Python scripts download OSM via Overpass, build a simplified directed graph, keep the largest strongly-connected component (Kosaraju), project to local metres and generate the globe from Natural Earth.
-- **Rendering:** React Three Fiber, custom GLSL (holographic globe, atmosphere, building windows/blackouts, flowing route lines, heatmap, rain), instanced meshes for vehicles and signals, bloom post-processing.
-
-## Cloud workspace (backend)
-
-The twin runs entirely in the browser, so the public demo needs no server. When the **SYNAPSE API** is running, a *Cloud workspace* panel adds:
-
-- **Accounts & projects** with owner / editor / viewer roles and invitations.
-- **Saved, versioned scenarios** (preset + parameters + seed) that anyone on the team can replay live.
-- **Saved experiments** whose statistics are **recomputed server-side** (means, sd, Welch t-test per KPI, verdict); unpaired seeds are rejected.
-- **Real-time collaboration**: presence and a live activity feed over WebSockets, fanned out through Redis pub/sub.
-- **Comments** on experiment results and **public read-only links** (`?share=…`) that open a scenario or result without an account.
-- **Geospatial API** on PostgreSQL + PostGIS + pgRouting: facilities within a radius, nearest road (KNN), server-side shortest path.
-
-See [backend/README.md](backend/README.md).
-
-## Architecture
-
-```
-backend/                  FastAPI · SQLAlchemy · PostgreSQL/PostGIS/pgRouting (SQLite in dev) · Redis · JWT · WebSockets
-pipeline/                 Python → OSM/Natural Earth → frontend/public/data/*.json
-frontend/src/
-  sim/                    engine (pure TS, no DOM): graph, routing, engine, scenarios, experiment, worker
-  runtime.ts              live loop, Time Machine snapshots & branches, worker client
-  lab.ts                  A/B experiments, statistics, exports, share links, reports
-  ai/copilot.ts           planning agent: intent → tool plan → simulations → explanation
-  three/                  Globe, CityScene, geometry & shaders
-  ui/                     HUD, Scenario Lab, Command Center, charts
+```mermaid
+sequenceDiagram
+    actor U as User
+    participant B as Browser (live twin + worker)
+    participant A as SYNAPSE API
+    participant G as Gemini
+    U->>B: "An accident blocked Avenida Oriental…"
+    B->>A: conversation
+    A->>G: system prompt + 14 authorised tools (key stays server-side)
+    G-->>A: call block_road / compute_detour / run_experiment
+    A-->>B: function calls
+    B->>B: execute on the live twin, simulate strategies in the worker
+    B->>A: tool results
+    A->>G: results
+    G-->>B: answer grounded in the measured KPIs
+    B->>U: recommendation + explainable card + "Apply" button
 ```
 
-## Run it
+Guard-rails: the model only *proposes* policy changes (the user confirms), parameters it supplies are sanitised and clamped, the loop is step-bounded and rate-limited, overloaded models fall back to another model, and if the LLM is unavailable a deterministic on-device planner answers instead.
+
+## 🏗️ Architecture
+
+```mermaid
+flowchart LR
+    subgraph Browser
+        UI[React HUD<br/>Lab · Copilot · Time Machine] --> RT[Runtime<br/>snapshots · branches]
+        RT --> ENG[Agent engine<br/>TypeScript]
+        UI --> R3F[React Three Fiber<br/>GLSL shaders]
+        RT --> W[Web Worker<br/>headless experiments]
+        W --> ENG
+    end
+    subgraph API[FastAPI]
+        AUTH[JWT auth · roles]
+        CP[Copilot proxy]
+        ST[Stats · Welch t-test]
+        WS[WebSockets]
+    end
+    UI <--> API
+    API --> PG[(PostgreSQL<br/>PostGIS · pgRouting)]
+    WS <--> RD[(Redis pub/sub)]
+    CP --> GM[Gemini]
+    OSM[OpenStreetMap] --> PIPE[Python pipeline] --> ENG
+    PIPE --> PG
+```
+
+| Layer | Stack |
+|---|---|
+| Frontend | React 19, TypeScript, React Three Fiber, custom GLSL, Zustand, Vite, Web Workers |
+| Backend | FastAPI, SQLAlchemy 2, PostgreSQL + PostGIS + pgRouting (SQLite in dev), Redis, JWT, WebSockets |
+| AI | Gemini function calling behind a server-side proxy with model fallback |
+| Data | OpenStreetMap via Overpass, Natural Earth, Python pipeline (graph simplification, Kosaraju SCC) |
+| Quality | Vitest, pytest, Playwright, GitHub Actions, Docker Compose |
+
+```
+synapse/
+├── frontend/         React app, simulation engine (src/sim), 3D (src/three), AI agent (src/ai), E2E tests (e2e/)
+├── backend/          FastAPI: auth, projects, scenarios, experiments, sharing, geo, copilot proxy
+├── pipeline/         OSM → road graph, buildings, facilities · Natural Earth → globe
+├── docs/screenshots/ README images (regenerate with Playwright)
+└── docker-compose.yml
+```
+
+## 🚀 Run it
+
+**Just the twin** (runs entirely in the browser — no server needed):
 
 ```bash
 cd frontend
 npm install
-npm run dev        # http://localhost:5173
-npm test           # engine test-suite (routing optimality, determinism, Time Machine replay, dispatch, grid)
-npm run e2e        # Playwright end-to-end tests in real Chromium (desktop + phone)
-npm run build      # static build in frontend/dist — deployable to Vercel / Netlify / GitHub Pages
+npm run dev            # http://localhost:5173
 ```
 
-Backend (optional — enables the Cloud workspace):
+**Full stack** with Docker — PostgreSQL + PostGIS + pgRouting, Redis, API and web:
+
+```bash
+echo GEMINI_API_KEY=your-key > .env    # optional: enables the Gemini agent
+docker compose up --build              # web http://localhost:8080 · API docs http://localhost:8010/docs
+```
+
+<details>
+<summary>Backend without Docker</summary>
 
 ```bash
 cd backend
-py -m venv .venv
-.venv\Scripts\python -m pip install -r requirements.txt
-.venv\Scripts\python -m uvicorn app.main:app --port 8010
+python -m venv .venv
+.venv/Scripts/python -m pip install -r requirements.txt     # Windows; use .venv/bin on macOS/Linux
+.venv/Scripts/python -m uvicorn app.main:app --port 8010
 ```
 
-Everything with Docker (PostgreSQL + PostGIS + pgRouting, Redis, API, web on http://localhost:8080):
+Configuration lives in `backend/.env` — see [`backend/.env.example`](backend/.env.example) and [backend/README.md](backend/README.md).
+</details>
+
+<details>
+<summary>Rebuild the datasets</summary>
 
 ```bash
-docker compose up --build
+python pipeline/fetch_osm.py      # roads, buildings and facilities from OpenStreetMap
+python pipeline/build_globe.py    # land points and coastlines from Natural Earth
 ```
+</details>
 
-Rebuild the datasets (optional):
+## ✅ Testing
 
-```bash
-py pipeline/fetch_osm.py
-py pipeline/build_globe.py
-```
+| Suite | What it proves | Command |
+|---|---|---|
+| **Engine** (10, Vitest) | A\* = Dijkstra optimum with fewer expansions, determinism, Time-Machine exact replay, dispatch, grid failures | `npm test` |
+| **API** (27, pytest) | auth & roles, validation, server-side statistics, sharing, WebSockets, PostGIS queries, copilot proxy & fallbacks | `pytest` |
+| **End-to-end** (9, Playwright) | real Chromium: descent, copilot, mocked Gemini tool loop, Lab + CSV + compare, Time Machine, share links, phone layout | `npm run e2e` |
 
-## Data & honesty note
+CI runs everything on every push, including the API suite against **real PostgreSQL + PostGIS + pgRouting**.
 
-Roads, critical facilities and 1,396 building footprints come from **© OpenStreetMap contributors (ODbL)**; 6,067 additional buildings are procedurally generated to fill unmapped blocks and are flagged as such in the dataset. Traffic demand, electrical loads and incidents are **synthetic, seeded and uncalibrated**: SYNAPSE compares strategies; it does not forecast Medellín's real traffic.
+## 🔍 Data & honesty
 
-## Roadmap
+Roads, critical facilities and 1,396 building footprints come from **© OpenStreetMap contributors (ODbL)**; 6,067 more buildings are procedurally generated to fill unmapped blocks and are flagged in the dataset. Traffic demand, electrical loads and incidents are **synthetic, seeded and uncalibrated**: SYNAPSE compares strategies — it does not forecast Medellín's real traffic.
 
-- LLM planner (tool-calling) on top of the same authorised engine tools.
-- Alembic migrations, rate limiting, observability (Prometheus metrics).
-- More cities, calibration against open traffic counts.
+## 🗺️ Roadmap
+
+- [ ] Public deployment (static front end + managed PostGIS)
+- [ ] Medellín Metro, pedestrians and time-of-day demand curves
+- [ ] Calibration against open traffic counts · more cities
+- [ ] Alembic migrations, observability (Prometheus/OpenTelemetry)
 
 ---
 
-Built by **[saracastrillons](https://github.com/saracastrillons)** · Systems Engineering · part of a portfolio with **NEXUS** (observes the world) and **AETHER** (analyses business data) — SYNAPSE lets you experiment with what *could* happen before deciding.
+<div align="center">
+
+Built by **[saracastrillons](https://github.com/saracastrillons)** · Systems Engineering
+
+Part of a portfolio with [**NEXUS**](https://github.com/saracastrillons/nexus) (observes the world) and **AETHER** (analyses business data) —
+SYNAPSE lets you experiment with what *could* happen before you decide.
+
+</div>

@@ -181,6 +181,14 @@ export function xai(ctx: Ctx, title: string, best: Ranked, base: Ranked, seeds: 
 const tableOf = (ranked: Ranked[], ctx: Ctx) => ranked.map((r, i) =>
   `${i === 0 ? '★' : `${i + 1}.`} ${r.label} — ${ctx.L('delay', 'demora')} ${(r.m.congestion * 100).toFixed(1)}% · ${r.m.speed.toFixed(1)} km/h · ${ctx.L('trip', 'viaje')} ${fmtDuration(r.m.trip)}${r.m.response ? ` · ${ctx.L('response', 'respuesta')} ${fmtDuration(r.m.response)}` : ''}`).join('\n')
 
+function detourNote(ctx: Ctx, astar: number, dijkstra: number) {
+  const saved = dijkstra ? Math.round((1 - astar / dijkstra) * 100) : 0
+  // on very short detours both searches do the same work: say so instead of "0% fewer"
+  return saved > 0
+    ? ctx.L(`A* found the same optimal detour as Dijkstra while expanding ${saved}% fewer nodes.`, `A* encontró el mismo desvío óptimo que Dijkstra expandiendo ${saved}% menos nodos.`)
+    : ctx.L('A* and Dijkstra agree on the optimal detour.', 'A* y Dijkstra coinciden en el desvío óptimo.')
+}
+
 // ───────────────────────────── plans
 async function planAccident(ctx: Ctx, text: string) {
   const sim = runtime.sim
@@ -215,7 +223,7 @@ async function planAccident(ctx: Ctx, text: string) {
     `The closure on **${runtime.sim.edgeName(inc.edge)}** forces a ${fmtDuration(d.astar.cost)} detour (green on the map). I simulated ${strategies.length} response strategies over the same seeds:\n\n${tableOf(ranked, ctx)}\n\n**Recommendation:** ${best.label} — reduces the delay index by ${gain.toFixed(0)}% versus doing nothing.`,
     `El cierre en **${runtime.sim.edgeName(inc.edge)}** obliga a un desvío de ${fmtDuration(d.astar.cost)} (en verde en el mapa). Simulé ${strategies.length} estrategias de respuesta con las mismas semillas:\n\n${tableOf(ranked, ctx)}\n\n**Recomendación:** ${best.label} — reduce el índice de demora un ${gain.toFixed(0)}% frente a no hacer nada.`),
   {
-    xai: xai(ctx, ctx.L('Restore traffic flow', 'Restablecer el flujo vehicular'), best, baseR, 2, ctx.L(`A* found the same optimal detour as Dijkstra while expanding ${d.dijkstra.expanded ? Math.round((1 - d.astar.expanded / d.dijkstra.expanded) * 100) : 0}% fewer nodes.`, `A* encontró el mismo desvío óptimo que Dijkstra expandiendo ${d.dijkstra.expanded ? Math.round((1 - d.astar.expanded / d.dijkstra.expanded) * 100) : 0}% menos nodos.`)),
+    xai: xai(ctx, ctx.L('Restore traffic flow', 'Restablecer el flujo vehicular'), best, baseR, 2, detourNote(ctx, d.astar.expanded, d.dijkstra.expanded)),
     actions: [
       { label: ctx.L(`Apply "${best.label}" live`, `Aplicar "${best.label}" en vivo`), run: () => runtime.applyParams(best.patch) },
       { label: ctx.L('Clear the incident', 'Despejar el incidente'), run: () => { runtime.sim.clearIncident(inc!.id); runtime.publish(true) } },

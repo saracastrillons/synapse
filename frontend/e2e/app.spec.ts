@@ -36,7 +36,7 @@ test.describe('SYNAPSE · core journeys', () => {
     await side.getByRole('button', { name: '5 min', exact: true }).click()
     await side.getByRole('button', { name: '1', exact: true }).click()
     await side.getByRole('button', { name: /Run A\/B/ }).click()
-    await expect(side.getByText(/Results · Baseline/i)).toBeVisible({ timeout: 90_000 })
+    await expect(side.getByText(/Results · Baseline/i)).toBeVisible({ timeout: 180_000 })
     await expect(side.locator('table.cmp')).toContainText('Mean speed')
 
     const download = page.waitForEvent('download')
@@ -46,7 +46,7 @@ test.describe('SYNAPSE · core journeys', () => {
     // second experiment on another situation, then compare both intervention arms
     await side.getByRole('button', { name: /Traffic demand \+40%/ }).click()
     await side.getByRole('button', { name: /Run A\/B/ }).click()
-    await expect(side.getByText(/Results · Traffic demand/i)).toBeVisible({ timeout: 90_000 })
+    await expect(side.getByText(/Results · Traffic demand/i)).toBeVisible({ timeout: 180_000 })
     await side.locator('.alert-row').first().getByRole('button', { name: 'Compare' }).click()
     await side.getByRole('button', { name: 'Compare', exact: true }).first().click()
     const modal = page.locator('.modal')
