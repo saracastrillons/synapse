@@ -1,0 +1,8 @@
+fastapi[standard]>=0.162
+sqlalchemy>=2.1
+psycopg[binary]>=3.3
+pyjwt>=2.15
+redis>=8.1
+pytest>=9.2
+httpx>=0.28
+python-dotenv>=1.0

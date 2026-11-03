@@ -1,0 +1,9 @@
+[project]
+name = "synapse-api"
+version = "0.2.0"
+description = "Backend of SYNAPSE — The Living Digital Twin of Earth"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "tests"]

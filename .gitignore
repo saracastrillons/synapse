@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.vite/
+__pycache__/
+.venv/
+.env
+pipeline/.cache/
+.claude/
+*.db
+backend/.env
+backend/.dev_jwt_secret
+dist-e2e/
+playwright-report/
+test-results/
