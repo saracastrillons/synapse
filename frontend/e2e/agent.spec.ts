@@ -25,12 +25,16 @@ test('Gemini agent: tool loop, evidence round-trip and human confirmation', asyn
 
   await enterCity(page)
   await openPanel(page, 'AI Command Center')
+  // the instant on-device planner is the default; Gemini is opt-in
+  await expect(page.getByRole('button', { name: 'On-device planner' })).toHaveClass(/on/)
+  await page.getByRole('button', { name: /Gemini agent · gemini-test/ }).click()
   await expect(page.getByRole('button', { name: /Gemini agent · gemini-test/ })).toHaveClass(/on/)
 
   await page.getByRole('button', { name: /Find the bottlenecks/ }).click()
   const answer = page.locator('.msg.ai').last()
   await expect(answer.locator('.answer')).toContainText('Recommendation:')
   await expect(answer.locator('.chip', { hasText: 'Gemini agent' })).toBeVisible()
+  await expect(answer.locator('.who')).toContainText(/answered in \d/)
   await expect(answer.locator('.step-name')).toHaveText(['get_city_state', 'propose_parameters'])
 
   // tool results were sent back to the model, with the thinking signature echoed verbatim
@@ -57,6 +61,7 @@ test('falls back to the on-device planner when the LLM fails', async ({ page }) 
   await page.route('**/api/copilot/step', (route) => route.fulfill({ status: 502, json: { detail: 'LLM provider error (503): overloaded' } }))
   await enterCity(page)
   await openPanel(page, 'AI Command Center')
+  await page.getByRole('button', { name: /Gemini agent · gemini-test/ }).click()
   const box = page.getByPlaceholder(/Ask SYNAPSE/)
   await box.fill('Executive summary')
   await box.press('Enter')

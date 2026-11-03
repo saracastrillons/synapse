@@ -51,7 +51,9 @@ export interface ChatMessage {
   id: number
   role: 'user' | 'ai'
   text: string
-  tools?: { name: string; args: string; result: string; ms: number }[]
+  tools?: { name: string; args: string; result: string; ms: number; started?: number }[]
+  startedAt?: number
+  finishedAt?: number
   xai?: XaiCard
   actions?: { label: string; run: () => void }[]
   pending?: boolean

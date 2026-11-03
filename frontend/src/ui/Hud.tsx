@@ -4,6 +4,7 @@ import { useUI, type LayerKey, type Panel, type Tool } from '../store'
 import { fmtDuration } from '../sim/engine'
 import { SCENARIOS } from '../sim/scenarios'
 import { Icon, Logo } from './Icons'
+import { useTour } from './Tour'
 import { LineChart, Legend, Sparkline } from './Charts'
 
 // ───────────────────────────────────────── top bar
@@ -78,6 +79,9 @@ export function Rail() {
       ))}
       <div style={{ flex: 1 }} />
       <LayersButton />
+      <button className="rail-btn" onClick={() => useTour.getState().start()}>
+        <Icon.target /><span className="tip">Guided tour</span>
+      </button>
       <button className="rail-btn" onClick={() => useUI.setState({ showAbout: true })}>
         <Icon.info /><span className="tip">About SYNAPSE</span>
       </button>

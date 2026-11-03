@@ -286,7 +286,7 @@ export async function ask(text: string, engine: 'llm' | 'local') {
   const ui = useUI.getState()
   const userId = ui.pushChat({ role: 'user', text })
   const lang = isSpanish(text) ? 'es' : 'en'
-  const id = ui.pushChat({ role: 'ai', text: lang === 'es' ? 'Pensando…' : 'Thinking…', pending: true, tools: [], engine: 'llm' })
+  const id = ui.pushChat({ role: 'ai', text: lang === 'es' ? 'Gemini está planificando…' : 'Gemini is planning…', pending: true, tools: [], engine: 'llm', startedAt: Date.now() })
   const ctx: Ctx = { id, lang, tools: [], L: (en, es) => (lang === 'es' ? es : en) }
   const state = runtime.sim.state
   const context = `[context: simulated clock ${clock(state.t)}, scenario "${useUI.getState().scenarioId}", ${state.metrics.activeIncidents} active incidents]`
@@ -295,7 +295,7 @@ export async function ask(text: string, engine: 'llm' | 'local') {
   let final = ''
   try {
     for (let step = 0; step < MAX_STEPS; step++) {
-      if (step > 0 || !ctx.tools.length) progress(ctx, ctx.L('Thinking…', 'Pensando…'))
+      if (step > 0) progress(ctx, ctx.L(`Gemini is reading the results (step ${step + 1})…`, `Gemini está leyendo los resultados (paso ${step + 1})…`))
       const res = await api<{ parts: Part[] }>('/api/copilot/step', { method: 'POST', json: { contents: [...history, ...turn] } })
       turn.push({ role: 'model', parts: res.parts })
       const calls = res.parts.filter((p) => p.functionCall)

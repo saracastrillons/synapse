@@ -13,6 +13,7 @@ import { Logo } from './ui/Icons'
 import { CityLabels } from './ui/Labels'
 import { CloudPanel } from './ui/Cloud'
 import { CompareModal } from './ui/Compare'
+import { Tour, tourAlreadySeen, useTour } from './ui/Tour'
 import { connect, detailToLabRun, openShared } from './cloud'
 import { pushRun } from './lab'
 
@@ -48,7 +49,7 @@ function GlobeOverlay() {
         <p>An interactive laboratory where cities become experiments. Agent-based traffic, emergency response and power-grid simulation on real OpenStreetMap data — with an AI that tests its own recommendations before it makes them.</p>
         <div className="cta">
           <button className="btn primary" style={{ padding: '11px 18px', fontSize: 13 }} onClick={enter}>Descend into Medellín →</button>
-          <button className="btn" style={{ padding: '11px 14px' }} onClick={() => useUI.setState({ showAbout: true })}>How it works</button>
+          <button className="btn" style={{ padding: '11px 14px' }} onClick={() => { useTour.setState({ queued: true }); enter() }}>Take the 60-second tour</button>
         </div>
       </div>
       <div className="city-list glass">
@@ -148,6 +149,15 @@ export default function App() {
   }, [])
 
   const inCity = mode === 'city'
+
+  // first visit (or "Take the tour" on the globe): start the guided tour once the camera has landed
+  useEffect(() => {
+    if (!inCity) return
+    const { queued } = useTour.getState()
+    if (!queued && (tourAlreadySeen() || location.hash || location.search)) return
+    const timer = setTimeout(() => useTour.getState().start(), queued ? 2500 : 3800)
+    return () => clearTimeout(timer)
+  }, [inCity])
   return (
     <div className="app">
       <div className="canvas-wrap">
@@ -194,6 +204,7 @@ export default function App() {
       </div>
       <About />
       <CompareModal />
+      {inCity && <Tour />}
       <Boot done={loaded && mode !== 'boot'} />
     </div>
   )

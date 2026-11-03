@@ -4,6 +4,15 @@ import { useCloud } from '../cloud'
 import { useUI, type ChatMessage, type XaiCard } from '../store'
 import { Icon } from './Icons'
 
+const ENGINE_KEY = 'synapse.copilot.engine'
+function readEngine() {
+  try {
+    return localStorage.getItem(ENGINE_KEY)
+  } catch {
+    return null
+  }
+}
+
 const STARTERS: { title: string; prompt: string; icon: () => ReactNode }[] = [
   { title: 'Restore traffic after a crash', prompt: 'A major accident just blocked Avenida Oriental. Find the fastest way to restore traffic flow', icon: Icon.block },
   { title: 'Dispatch an ambulance', prompt: 'Send an ambulance to Carrera 54 and tell me if signal pre-emption is worth it', icon: Icon.cross },
@@ -72,7 +81,7 @@ function ToolTimeline({ tools }: { tools: NonNullable<ChatMessage['tools']> }) {
           <div key={i} className={`step ${running ? 'running' : 'done'}`}>
             <span className="step-dot">{running ? <span className="spin" /> : '✓'}</span>
             <div style={{ minWidth: 0 }}>
-              <div className="between"><span className="mono step-name">{t.name}</span>{!running && <span className="dim mono" style={{ fontSize: 10 }}>{t.ms < 1000 ? `${t.ms.toFixed(0)} ms` : `${(t.ms / 1000).toFixed(1)} s`}</span>}</div>
+              <div className="between"><span className="mono step-name">{t.name}</span>{running ? (t.started ? <Elapsed since={t.started} /> : null) : <span className="dim mono" style={{ fontSize: 10 }}>{t.ms < 1000 ? `${t.ms.toFixed(0)} ms` : `${(t.ms / 1000).toFixed(1)} s`}</span>}</div>
               {args && <div className="step-args">{args.length > 110 ? args.slice(0, 110) + '…' : args}</div>}
               {!running && <div className="step-res">→ {t.result}</div>}
             </div>
@@ -83,13 +92,27 @@ function ToolTimeline({ tools }: { tools: NonNullable<ChatMessage['tools']> }) {
   )
 }
 
+/** Live "12 s" counter while something is running. */
+function Elapsed({ since }: { since: number }) {
+  const [, tick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => tick((x) => x + 1), 250)
+    return () => clearInterval(id)
+  }, [])
+  return <span className="mono elapsed">{((Date.now() - since) / 1000).toFixed(0)} s</span>
+}
+
+const fmtSeconds = (ms: number) => (ms < 10_000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms / 1000)} s`)
+
 function Message({ m }: { m: ChatMessage }) {
   if (m.role === 'user') return <div className="msg user">{m.text}</div>
   return (
     <div className="msg ai">
       <div className="who">
         <span className="avatar"><Icon.ai /></span> SYNAPSE COPILOT
-        <span className={`chip ${m.engine === 'llm' ? 'cyan' : ''}`} style={{ marginLeft: 'auto' }}>{m.engine === 'llm' ? 'Gemini agent' : 'on-device planner'}</span>
+        <span style={{ marginLeft: 'auto' }} />
+        {m.startedAt && (m.pending ? <Elapsed since={m.startedAt} /> : m.finishedAt ? <span className="mono dim" style={{ fontSize: 10 }}>answered in {fmtSeconds(m.finishedAt - m.startedAt)}</span> : null)}
+        <span className={`chip ${m.engine === 'llm' ? 'cyan' : ''}`}>{m.engine === 'llm' ? 'Gemini agent' : 'on-device planner'}</span>
       </div>
       {m.notice && <div className="notice">{m.notice}</div>}
       {m.tools && m.tools.length > 0 && <ToolTimeline tools={m.tools} />}
@@ -118,14 +141,22 @@ export function CommandCenter() {
   const online = useCloud((s) => s.online)
   const info = useCloud((s) => s.info)
   const llm = online === true && !!info.copilot?.enabled
-  const [engine, setEngine] = useState<'llm' | 'local'>(llmAvailable() ? 'llm' : 'local')
+  // The instant on-device planner is the default; Gemini is opt-in and the choice is remembered.
+  const [engine, setEngineState] = useState<'llm' | 'local'>(() => (llmAvailable() && readEngine() === 'llm' ? 'llm' : 'local'))
+  const setEngine = (e: 'llm' | 'local') => {
+    setEngineState(e)
+    try {
+      localStorage.setItem(ENGINE_KEY, e)
+    } catch { /* storage unavailable */ }
+  }
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const log = useRef<HTMLDivElement>(null)
   const input = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
-    setEngine(llm ? 'llm' : 'local')
+    if (!llm) setEngineState('local')
+    else if (readEngine() === 'llm') setEngineState('llm')
   }, [llm])
   useEffect(() => {
     log.current?.scrollTo({ top: log.current.scrollHeight, behavior: 'smooth' })
@@ -168,7 +199,9 @@ export function CommandCenter() {
           <div className="empty">
             <div className="empty-title">What should we test today?</div>
             <div className="dim" style={{ fontSize: 12, marginBottom: 12 }}>
-              {engine === 'llm' ? 'Gemini plans which tools to use; every number it reports comes from the simulation.' : 'The on-device planner maps your request to a fixed tool plan. Works offline.'}
+              {engine === 'llm'
+                ? 'Gemini plans which tools to use; every number it reports comes from the simulation. Each step can take 10–60 s when Google is busy.'
+                : llm ? 'Instant on-device planner. Switch to the Gemini agent above for open-ended questions.' : 'The on-device planner maps your request to a fixed tool plan — instant and offline.'}
             </div>
             <div className="starters">
               {STARTERS.map((s) => (

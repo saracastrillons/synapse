@@ -26,7 +26,7 @@ export interface Ctx {
 }
 
 export async function tool<T>(ctx: Ctx, name: string, args: Record<string, unknown>, fn: () => T | Promise<T>, summary: (r: T) => string): Promise<T> {
-  const entry = { name, args: JSON.stringify(args), result: '…', ms: 0 }
+  const entry = { name, args: JSON.stringify(args), result: '…', ms: 0, started: Date.now() }
   ctx.tools.push(entry)
   useUI.getState().patchChat(ctx.id, { tools: [...ctx.tools] })
   await new Promise((r) => setTimeout(r, 120))
@@ -39,7 +39,7 @@ export async function tool<T>(ctx: Ctx, name: string, args: Record<string, unkno
 }
 
 export function say(ctx: Ctx, text: string, extra: Partial<ChatMessage> = {}) {
-  useUI.getState().patchChat(ctx.id, { text, pending: false, ...extra })
+  useUI.getState().patchChat(ctx.id, { text, pending: false, finishedAt: Date.now(), ...extra })
 }
 
 export function progress(ctx: Ctx, text: string) {
@@ -384,7 +384,7 @@ export async function askLocal(text: string) {
   const ui = useUI.getState()
   ui.pushChat({ role: 'user', text })
   const lang: Lang = isSpanish(text) ? 'es' : 'en'
-  const id = ui.pushChat({ role: 'ai', text: lang === 'es' ? 'Planificando…' : 'Planning…', pending: true, tools: [] })
+  const id = ui.pushChat({ role: 'ai', text: lang === 'es' ? 'Planificando…' : 'Planning…', pending: true, tools: [], startedAt: Date.now() })
   const ctx: Ctx = { id, lang, tools: [], L: (en, es) => (lang === 'es' ? es : en) }
   const t = norm(text)
   try {

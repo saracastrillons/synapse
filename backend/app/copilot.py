@@ -36,12 +36,13 @@ def api_key() -> str | None:
 
 
 def model_name() -> str:
-    return os.getenv("GEMINI_MODEL", "gemini-flash-latest")
+    # measured: the lite model answers tool-calling steps fastest and is the least often overloaded
+    return os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest")
 
 
 def model_chain() -> list[str]:
     """Primary model first, then fallbacks (GEMINI_FALLBACK_MODELS, comma-separated)."""
-    fallbacks = os.getenv("GEMINI_FALLBACK_MODELS", "gemini-flash-lite-latest").split(",")
+    fallbacks = os.getenv("GEMINI_FALLBACK_MODELS", "gemini-flash-latest").split(",")
     chain = [model_name()] + [m.strip() for m in fallbacks if m.strip()]
     return list(dict.fromkeys(chain))
 

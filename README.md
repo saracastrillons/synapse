@@ -11,7 +11,7 @@ with an AI agent that tests its own recommendations before it makes them.**
 
 [![CI](https://github.com/saracastrillons/synapse/actions/workflows/ci.yml/badge.svg)](https://github.com/saracastrillons/synapse/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-22d3ee.svg)](LICENSE)
-![Tests](https://img.shields.io/badge/tests-46%20passing-34d399)
+![Tests](https://img.shields.io/badge/tests-48%20passing-34d399)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
 ![React Three Fiber](https://img.shields.io/badge/React%20Three%20Fiber-000000?logo=threedotjs&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
@@ -92,7 +92,7 @@ Responsive HUD: full-screen map, panels one tap away. Verified by end-to-end tes
 </tr>
 </table>
 
-**Also inside:** autonomous agents with readable decision logs · ETA-optimal ambulance dispatch with signal pre-emption · power grid with storm/overload failures and repair crews · anomaly detection and congestion forecast · accounts, shared projects, versioned scenarios, comments and live collaboration.
+**Also inside:** a 60-second guided tour for first-time visitors · autonomous agents with readable decision logs · ETA-optimal ambulance dispatch with signal pre-emption · power grid with storm/overload failures and repair crews · anomaly detection and congestion forecast · accounts, shared projects, versioned scenarios, comments and live collaboration.
 
 ## 🧠 How it works
 
@@ -131,7 +131,7 @@ sequenceDiagram
     B->>U: recommendation + explainable card + "Apply" button
 ```
 
-Guard-rails: the model only *proposes* policy changes (the user confirms), parameters it supplies are sanitised and clamped, the loop is step-bounded and rate-limited, overloaded models fall back to another model, and if the LLM is unavailable a deterministic on-device planner answers instead.
+The instant on-device planner is the default; the Gemini agent is one click away and shows a live timer for every step. Guard-rails: the model only *proposes* policy changes (the user confirms), parameters it supplies are sanitised and clamped, the loop is step-bounded and rate-limited, overloaded models fall back to another model, and if the LLM is unavailable a deterministic on-device planner answers instead.
 
 ## 🏗️ Architecture
 
@@ -220,7 +220,7 @@ python pipeline/build_globe.py    # land points and coastlines from Natural Eart
 |---|---|---|
 | **Engine** (10, Vitest) | A\* = Dijkstra optimum with fewer expansions, determinism, Time-Machine exact replay, dispatch, grid failures | `npm test` |
 | **API** (27, pytest) | auth & roles, validation, server-side statistics, sharing, WebSockets, PostGIS queries, copilot proxy & fallbacks | `pytest` |
-| **End-to-end** (9, Playwright) | real Chromium: descent, copilot, mocked Gemini tool loop, Lab + CSV + compare, Time Machine, share links, phone layout | `npm run e2e` |
+| **End-to-end** (11, Playwright) | real Chromium: descent, guided tour, copilot, mocked Gemini tool loop, Lab + CSV + compare, Time Machine, share links, phone layout | `npm run e2e` |
 
 CI runs everything on every push, including the API suite against **real PostgreSQL + PostGIS + pgRouting**.
 
