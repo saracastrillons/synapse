@@ -183,7 +183,7 @@ export function LabPanel() {
         </div>
 
         {current && <Results run={current} metric={metric} setMetric={setMetric} onShare={async () => {
-          await navigator.clipboard?.writeText(shareLink({ scenario: sel, a, b, labelB, duration, reps })).catch(() => {})
+          await navigator.clipboard?.writeText(shareLink({ city: runtime.city.id, scenario: sel, a, b, labelB, duration, reps })).catch(() => {})
           setCopied(true)
           setTimeout(() => setCopied(false), 2000)
         }} copied={copied} onApply={() => runLive(current.b[0].params)} />}

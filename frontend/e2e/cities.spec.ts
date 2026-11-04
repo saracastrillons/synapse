@@ -40,3 +40,11 @@ test('Bogotá shows its metro line as under construction', async ({ page }) => {
   await expect(page.locator('.side .scn', { hasText: 'Rail outage' })).toHaveCount(0)
   await expect(page.locator('.side .scn', { hasText: 'Accident · Avenida Carrera 10' })).toBeVisible()
 })
+
+test('a shared Lab link opens in the city it was made in', async ({ page }) => {
+  const p = { seed: 3, vehicles: 1300, capacity: 1, smartNav: 0.35, signals: 'adaptive', preemption: true, storm: 0, powerDemand: 1, repairCrews: 2, ambulances: 1, incidentRate: 4, startHour: 7.25, dynamicDemand: true, metro: 1 }
+  const setup = { city: 'newyork', scenario: 'metro', a: p, b: { ...p, smartNav: 0.8 }, labelB: 'Live navigation', duration: 300, reps: 1 }
+  await page.goto(`/#lab=${Buffer.from(JSON.stringify(setup)).toString('base64')}`)
+  await expect(page.locator('.crumbs')).toContainText('New York', { timeout: 90_000 })
+  await expect(page.locator('.side .scn.on')).toContainText('Rail outage at rush hour')
+})

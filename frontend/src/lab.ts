@@ -118,6 +118,8 @@ export function loadRuns(): LabRun[] {
 }
 
 export interface SharedSetup {
+  /** absent in links created before multi-city support (= medellin) */
+  city?: string
   scenario: string
   a: SimParams
   b: SimParams

@@ -15,6 +15,7 @@ import { CloudPanel } from './ui/Cloud'
 import { CompareModal } from './ui/Compare'
 import { Tour, tourAlreadySeen, useTour } from './ui/Tour'
 import { connect, detailToLabRun, openShared } from './cloud'
+import { parsePresetKey } from './sim/cities'
 import { pushRun } from './lab'
 
 function Boot({ done }: { done: boolean }) {
@@ -147,16 +148,22 @@ export default function App() {
         history.replaceState(null, '', location.pathname)
         openShared(shareToken).then((s) => {
           const d = s.data as Record<string, never>
-          if (s.kind === 'scenario') {
-            runtime.loadScenario(d.preset, d.params)
-            useUI.setState({ mode: 'city', panel: 'overview' })
-          } else {
-            pushRun(detailToLabRun({ ...(d as object), id: Date.now() } as Parameters<typeof detailToLabRun>[0]))
-            useUI.setState({ mode: 'city', panel: 'lab' })
-          }
-          runtime.sim.alert('info', `Opened shared ${s.kind} from project "${s.project}" · ${s.views} views`)
+          const { city, preset } = parsePresetKey(String(d.preset))
+          return runtime.loadCity(city).then(() => {
+            if (s.kind === 'scenario') {
+              runtime.loadScenario(preset, d.params)
+              useUI.setState({ mode: 'city', panel: 'overview' })
+            } else {
+              pushRun(detailToLabRun({ ...(d as object), id: Date.now() } as Parameters<typeof detailToLabRun>[0]))
+              useUI.setState({ mode: 'city', panel: 'lab' })
+            }
+            runtime.sim.alert('info', `Opened shared ${s.kind} from project "${s.project}" · ${s.views} views`)
+          })
         }).catch(() => useUI.setState({ mode: 'globe' }))
-      } else if (readSharedSetup()) useUI.setState({ mode: 'city', panel: 'lab' })
+      } else if (readSharedSetup()) {
+        // a shared Lab setup opens in the city it was made in
+        runtime.loadCity(readSharedSetup()?.city ?? 'medellin').then(() => useUI.setState({ mode: 'city', panel: 'lab' }))
+      }
       else setTimeout(() => useUI.setState({ mode: 'globe' }), 500)
     })
   }, [])

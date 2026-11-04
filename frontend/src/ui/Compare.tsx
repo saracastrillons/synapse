@@ -3,6 +3,8 @@ import { create } from 'zustand'
 import { api } from '../cloud'
 import { LAB_KPIS, compare, download, fmtKpi, seriesOf, verdict } from '../lab'
 import { scenarioById } from '../sim/scenarios'
+import { cityById } from '../sim/cities'
+import { runtime } from '../runtime'
 import type { LabRun } from '../store'
 import { Legend, LineChart } from './Charts'
 import { Icon } from './Icons'
@@ -75,10 +77,11 @@ export function CompareModal() {
   const seedsA = r1.run.b.map((r) => r.seed).join(',')
   const seedsB = r2.run.b.map((r) => r.seed).join(',')
   const warnings: string[] = []
-  if (r1.run.scenario !== r2.run.scenario) warnings.push('Different scenarios — you are comparing different situations, not only different decisions.')
+  if ((r1.run.city ?? 'medellin') !== (r2.run.city ?? 'medellin')) warnings.push('Different cities — the road networks are not the same, so compare trends rather than absolute numbers.')
+  else if (r1.run.scenario !== r2.run.scenario) warnings.push('Different scenarios — you are comparing different situations, not only different decisions.')
   if (r1.run.duration !== r2.run.duration) warnings.push('Different simulated durations.')
   if (seedsA !== seedsB) warnings.push('Different seeds: the comparison is not paired, so random variation is included.')
-  const name = (p: Pick) => scenarioById(p.run.scenario)?.name ?? p.run.scenario
+  const name = (p: Pick) => `${cityById(p.run.city ?? 'medellin').name} · ${(p.run.city ?? 'medellin') === runtime.city.id ? scenarioById(p.run.scenario)?.name ?? p.run.scenario : p.run.scenario}`
   const pval = (k: string) => server?.stats.find((s) => s.kpi === k)?.p_value
   const exportCsv = () => {
     const lines = ['kpi,unit,run1,run2,delta_pct,winner' + (server ? ',p_value' : '')]

@@ -6,6 +6,7 @@ import { API_URL, addComment, comments, connect, createProject, fetchRun, invite
 import { pushRun } from '../lab'
 import { Icon } from './Icons'
 import { CompareToggle } from './Compare'
+import { cityById, parsePresetKey } from '../sim/cities'
 
 const input = { width: '100%', background: 'rgba(0,0,0,.3)', border: '1px solid var(--line-2)', borderRadius: 8, padding: '7px 10px', outline: 'none' } as const
 
@@ -196,9 +197,14 @@ export function CloudPanel() {
               {cloud.scenarios.map((s) => (
                 <div key={s.id} className="card">
                   <div className="between"><b style={{ fontSize: 12 }}>{s.name}</b><span className="chip mono">v{s.version} · seed {s.params.seed}</span></div>
-                  <div className="muted" style={{ fontSize: 11, marginTop: 3 }}>{scenarioById(s.preset)?.name ?? s.preset} · {s.params.vehicles} vehicles · {s.params.signals} signals</div>
+                  <div className="muted" style={{ fontSize: 11, marginTop: 3 }}>{cityById(parsePresetKey(s.preset).city).name} · {scenarioById(s.preset)?.name ?? parsePresetKey(s.preset).preset} · {s.params.vehicles} vehicles · {s.params.signals} signals</div>
                   <div className="row" style={{ gap: 6, marginTop: 8 }}>
-                    <button className="btn small" onClick={() => { runtime.loadScenario(s.preset, s.params); useUI.setState({ paused: false }) }}><Icon.play /> Run live</button>
+                    <button className="btn small" onClick={async () => {
+                      const { city, preset } = parsePresetKey(s.preset)
+                      await runtime.loadCity(city)
+                      runtime.loadScenario(preset, s.params)
+                      useUI.setState({ paused: false })
+                    }}><Icon.play /> Run live</button>
                     <button className="btn small" onClick={async () => { const u = await share('scenario', s.id); setScLink({ ...scLink, [s.id]: u }); navigator.clipboard?.writeText(u).catch(() => {}) }}>{scLink[s.id] ? 'Link copied ✓' : 'Public link'}</button>
                   </div>
                 </div>

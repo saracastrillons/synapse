@@ -60,6 +60,16 @@ export const CITIES: CityConfig[] = [
 
 export const cityById = (id: string) => CITIES.find((c) => c.id === id) ?? CITIES[0]
 
+/** "bogota/accident" ⇄ { city: 'bogota', preset: 'accident' }; ids without a city are Medellín's. */
+export function presetKey(city: string, preset: string) {
+  return city === 'medellin' ? preset : `${city}/${preset}`
+}
+
+export function parsePresetKey(key: string): { city: string; preset: string } {
+  const [a, b] = key.split('/')
+  return b ? { city: a, preset: b } : { city: 'medellin', preset: a }
+}
+
 /** WGS84 → the dataset's local metric plane (same projection as the Python pipeline). */
 export function toLocal(data: CityData, lat: number, lon: number): [number, number] {
   const { lat: lat0, lon: lon0 } = data.meta.center

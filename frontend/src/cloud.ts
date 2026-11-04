@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import type { ExperimentSummary } from './sim/experiment'
 import type { Sample, SimParams } from './sim/types'
 import type { LabRun } from './store'
+import { parsePresetKey, presetKey } from './sim/cities'
+import { runtime } from './runtime'
 
 /**
  * Client for the optional SYNAPSE API. The twin is fully usable offline; when the
@@ -144,7 +146,7 @@ export async function invite(email: string, role: 'editor' | 'viewer') {
 // ───────────────────────────── scenarios & runs
 export async function saveScenario(name: string, preset: string, params: SimParams, intervention?: { label: string; params: Partial<SimParams> }) {
   const p = useCloud.getState().project!
-  await api(`/api/projects/${p.id}/scenarios`, { method: 'POST', json: { name, preset, params, intervention: intervention ?? null } })
+  await api(`/api/projects/${p.id}/scenarios`, { method: 'POST', json: { name, preset: presetKey(runtime.city.id, preset), params, intervention: intervention ?? null } })
   await refreshProject()
 }
 
@@ -160,7 +162,7 @@ export async function saveRun(run: LabRun) {
   const saved = await api<RunRec>(`/api/projects/${p.id}/runs`, {
     method: 'POST',
     json: {
-      preset: run.scenario, label_a: run.labelA, label_b: run.labelB, duration: run.duration,
+      preset: presetKey(run.city ?? 'medellin', run.scenario), label_a: run.labelA, label_b: run.labelB, duration: run.duration,
       params_a: strip(run.a[0].params), params_b: strip({ ...run.b[0].params, seed: run.a[0].params.seed }),
       a: run.a.map((r) => ({ seed: r.seed, summary: numeric(r.summary), history: thin(r.history) })),
       b: run.b.map((r) => ({ seed: r.seed, summary: numeric(r.summary), history: thin(r.history) })),
@@ -178,7 +180,7 @@ export function detailToLabRun(d: RunDetail): LabRun {
   const arm = (reps: RunDetail['replicates']['a'], label: string, params: SimParams) =>
     reps.map((r) => ({ label, seed: r.seed, params: { ...params, seed: r.seed }, summary: r.summary, history: r.history, wallMs: 0 }))
   return {
-    id: d.id, scenario: d.preset, labelA: d.label_a, labelB: d.label_b, duration: d.duration, createdAt: Date.parse(d.created_at),
+    id: d.id, scenario: parsePresetKey(d.preset).preset, city: parsePresetKey(d.preset).city, labelA: d.label_a, labelB: d.label_b, duration: d.duration, createdAt: Date.parse(d.created_at),
     a: arm(d.replicates.a, d.label_a, d.params_a), b: arm(d.replicates.b, d.label_b, d.params_b),
   }
 }
