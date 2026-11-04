@@ -6,6 +6,8 @@ import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import { runtime } from '../runtime'
 import { useUI } from '../store'
 import { LabelProjector } from '../ui/Labels'
+import { Transit } from './Transit'
+import { daylight } from '../sim/timeofday'
 import { buildBuildingGeometry, buildRoadGeometry, buildingFrag, buildingVert, flowFrag, flowVert, routeGeometry } from './cityGeometry'
 
 const FOG = new THREE.Color('#03050b')
@@ -14,6 +16,7 @@ const tmp: [number, number, number] = [0, 0, 0]
 // ───────────────────────────────────────────── ground
 const groundFrag = /* glsl */ `
   uniform vec2 uExtent;
+  uniform float uDay;
   varying vec3 vW;
   void main() {
     vec2 p = vW.xz;
@@ -28,6 +31,7 @@ const groundFrag = /* glsl */ `
     vec3 col = vec3(0.012, 0.02, 0.04) + vec3(0.02, 0.08, 0.14) * l1 * 0.35 * inside + vec3(0.05, 0.2, 0.35) * l2 * 0.4;
     col += vec3(0.1, 0.6, 0.9) * edge * 0.7;
     col = mix(col, vec3(0.012, 0.02, 0.045), smoothstep(0.3, 1.0, d));
+    col *= 1.0 + 1.6 * uDay;
     gl_FragColor = vec4(col, 1.0);
   }`
 const groundVert = /* glsl */ `
@@ -38,7 +42,7 @@ function Ground() {
   const ext = runtime.data.meta.extent
   const mat = useMemo(() => new THREE.ShaderMaterial({
     vertexShader: groundVert, fragmentShader: groundFrag,
-    uniforms: { uExtent: { value: new THREE.Vector2(ext.halfWidth, ext.halfHeight) } },
+    uniforms: { uExtent: { value: new THREE.Vector2(ext.halfWidth, ext.halfHeight) }, uDay: DAY },
   }), [ext])
   const onClick = (e: ThreeEvent<MouseEvent>) => {
     if (e.delta > 5) return
@@ -139,7 +143,7 @@ function Buildings() {
     vertexShader: buildingVert, fragmentShader: buildingFrag, side: THREE.DoubleSide,
     uniforms: {
       uPowered: { value: new THREE.Vector4(1, 1, 1, 1) }, uTime: { value: 0 }, uFog: { value: FOG },
-      uFogNear: { value: 1800 }, uFogFar: { value: 5200 }, uStorm: { value: 0 },
+      uFogNear: { value: 1800 }, uFogFar: { value: 5200 }, uStorm: { value: 0 }, uDay: DAY,
     },
   }), [])
   useFrame(({ clock }) => {
@@ -559,6 +563,27 @@ function CameraRig() {
   )
 }
 
+// ───────────────────────────────────────── day / night
+/** shared uniform: 0 night … 1 daylight (driven by the simulated clock) */
+const DAY = { value: 0 }
+const NIGHT_SKY = new THREE.Color('#03050b')
+const DAY_SKY = new THREE.Color('#0f1a33')
+
+function DayNight() {
+  const { scene } = useThree()
+  const sun = useRef<THREE.DirectionalLight>(null)
+  useFrame(() => {
+    const target = daylight(runtime.sim.hour())
+    DAY.value += (target - DAY.value) * 0.05
+    const sky = scene.background instanceof THREE.Color ? scene.background : null
+    if (sky) sky.lerpColors(NIGHT_SKY, DAY_SKY, DAY.value)
+    FOG.lerpColors(NIGHT_SKY, DAY_SKY, DAY.value)
+    if (scene.fog) scene.fog.color.copy(FOG)
+    if (sun.current) sun.current.intensity = 0.6 + 1.1 * DAY.value
+  })
+  return <directionalLight ref={sun} position={[600, 1200, 400]} intensity={0.6} color="#c7d2fe" />
+}
+
 function SimDriver() {
   useFrame((_, dt) => runtime.frame(dt))
   return null
@@ -569,13 +594,14 @@ export function CityScene() {
     <>
       <color attach="background" args={['#03050b']} />
       <fog attach="fog" args={[FOG, 1800, 5200]} />
-      <directionalLight position={[600, 1200, 400]} intensity={0.6} color="#a5b4fc" />
+      <DayNight />
       <SimDriver />
       <LabelProjector />
       <CameraRig />
       <Weather />
       <Ground />
       <Roads />
+      <Transit />
       <Buildings />
       <Heatmap />
       <Grid />

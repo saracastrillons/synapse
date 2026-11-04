@@ -154,8 +154,8 @@ const thin = (h: Sample[]) => h.filter((_, i) => i % 2 === 0) as unknown as Reco
 export async function saveRun(run: LabRun) {
   const p = useCloud.getState().project!
   const strip = (x: SimParams): SimParams => {
-    const { seed, vehicles, capacity, smartNav, signals, preemption, storm, powerDemand, repairCrews, ambulances, incidentRate } = x
-    return { seed, vehicles, capacity, smartNav, signals, preemption, storm, powerDemand, repairCrews, ambulances, incidentRate }
+    const { seed, vehicles, capacity, smartNav, signals, preemption, storm, powerDemand, repairCrews, ambulances, incidentRate, startHour, dynamicDemand, metro } = x
+    return { seed, vehicles, capacity, smartNav, signals, preemption, storm, powerDemand, repairCrews, ambulances, incidentRate, startHour, dynamicDemand, metro }
   }
   const saved = await api<RunRec>(`/api/projects/${p.id}/runs`, {
     method: 'POST',

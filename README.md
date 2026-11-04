@@ -11,7 +11,7 @@ with an AI agent that tests its own recommendations before it makes them.**
 
 [![CI](https://github.com/saracastrillons/synapse/actions/workflows/ci.yml/badge.svg)](https://github.com/saracastrillons/synapse/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-22d3ee.svg)](LICENSE)
-![Tests](https://img.shields.io/badge/tests-48%20passing-34d399)
+![Tests](https://img.shields.io/badge/tests-57%20passing-34d399)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
 ![React Three Fiber](https://img.shields.io/badge/React%20Three%20Fiber-000000?logo=threedotjs&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
@@ -24,7 +24,7 @@ with an AI agent that tests its own recommendations before it makes them.**
 
 ---
 
-SYNAPSE simulates **Medellín Centro (Colombia)** on its real OpenStreetMap road network — 5,592 junctions, 6,151 road segments, 140 signalised intersections, real hospitals, fire stations and substations — with **~1,300 autonomous vehicles**, emergency units and a power grid. You can break the city (block an avenue, trip a substation, unleash a storm), test interventions in controlled experiments, rewind time to change a decision, and ask an AI agent what to do. Every answer it gives is backed by simulations you can re-run with the same seed.
+SYNAPSE simulates three real downtowns on their OpenStreetMap data — **Medellín Centro**, **Bogotá Centro** and **Lower Manhattan** — with their actual streets, rail lines, stations, hospitals, fire stations and substations, **~1,300 autonomous vehicles** whose demand follows the time of day, timetabled metro and tram trains, emergency units and a power grid. You can break the city (block an avenue, trip a substation, unleash a storm), test interventions in controlled experiments, rewind time to change a decision, and ask an AI agent what to do. Every answer it gives is backed by simulations you can re-run with the same seed.
 
 > **Try asking:** *"A major accident just blocked Avenida Oriental. Find the fastest way to restore traffic flow."*
 > The agent blocks the road, computes the detour with A\* and Dijkstra, simulates four response strategies on identical seeds, ranks them and asks you to confirm the winner.
@@ -92,6 +92,27 @@ Responsive HUD: full-screen map, panels one tap away. Verified by end-to-end tes
 </tr>
 </table>
 
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**🚇 Metro, trams and the time of day**<br/>
+Real rail lines and stations from OSM — Medellín's elevated Metro A/B and the Ayacucho tramway, 17 New York subway services with their official colours. Trains run on a timetable whose frequency follows the day; traffic peaks at 07:30 and 18:00 and empties at night, and a rail outage pushes riders onto the roads.
+
+</td>
+<td width="50%" valign="top">
+
+**🌎 Three cities**<br/>
+Pick a city on the globe: **Medellín** (metro & tram), **Bogotá** (historic centre, Metro Line 1 shown as *under construction* — it is not in service yet) or **New York** (skyscrapers with mapped heights up to 417 m, underground subway). Every scenario adapts to the city's own avenues.
+
+</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/09-night.jpg" alt="Medellín at night with metro lines A, B and the T-A tramway" /></td>
+<td><img src="docs/screenshots/10-new-york.jpg" alt="Lower Manhattan with subway stations and line badges" /></td>
+</tr>
+</table>
+
 **Also inside:** a 60-second guided tour for first-time visitors · autonomous agents with readable decision logs · ETA-optimal ambulance dispatch with signal pre-emption · power grid with storm/overload failures and repair crews · anomaly detection and congestion forecast · accounts, shared projects, versioned scenarios, comments and live collaboration.
 
 ## 🧠 How it works
@@ -108,6 +129,8 @@ A deterministic agent-based engine written in TypeScript, shared by the live 3D 
 | Emergencies | Poisson incidents, severity-ordered dispatch minimising A\* ETA over all idle units |
 | Power grid | Substations sized at 122 % of base load, failure hazard from storm² and overload, repair time scales with crews |
 | Analytics | Per-edge z-score anomaly detection, least-squares forecast of the delay index |
+| Time of day | Two-peak daily demand curve (07:30, 18:00, lunchtime shoulder, night trough); day/night lighting |
+| Rail transit | Daily timetables with time-of-day headways, trapezoidal speed profile and dwell times; services sharing a trunk split its frequency; a suspension freezes trains and shifts ~18 % of riders to the roads |
 
 Fixed 0.2 s step and a single seeded PRNG stored inside the state: **same seed + parameters + events ⇒ identical run**, in Node and in the browser. Time Machine snapshots are bounded (≈70 MB worst case) and thinned as they age.
 
@@ -209,7 +232,7 @@ Configuration lives in `backend/.env` — see [`backend/.env.example`](backend/.
 <summary>Rebuild the datasets</summary>
 
 ```bash
-python pipeline/fetch_osm.py      # roads, buildings and facilities from OpenStreetMap
+python pipeline/fetch_osm.py all  # roads, buildings, facilities and rail for medellin, bogota, newyork
 python pipeline/build_globe.py    # land points and coastlines from Natural Earth
 ```
 </details>
@@ -218,20 +241,21 @@ python pipeline/build_globe.py    # land points and coastlines from Natural Eart
 
 | Suite | What it proves | Command |
 |---|---|---|
-| **Engine** (10, Vitest) | A\* = Dijkstra optimum with fewer expansions, determinism, Time-Machine exact replay, dispatch, grid failures | `npm test` |
+| **Engine** (16, Vitest) | A\* = Dijkstra optimum with fewer expansions, determinism, Time-Machine exact replay, dispatch, grid failures, demand curve, rail timetables and outages | `npm test` |
 | **API** (27, pytest) | auth & roles, validation, server-side statistics, sharing, WebSockets, PostGIS queries, copilot proxy & fallbacks | `pytest` |
-| **End-to-end** (11, Playwright) | real Chromium: descent, guided tour, copilot, mocked Gemini tool loop, Lab + CSV + compare, Time Machine, share links, phone layout | `npm run e2e` |
+| **End-to-end** (14, Playwright) | real Chromium: descent, guided tour, copilot, mocked Gemini tool loop, Lab + CSV + compare, Time Machine, share links, city switching, rail outage, night mode, phone layout | `npm run e2e` |
 
 CI runs everything on every push, including the API suite against **real PostgreSQL + PostGIS + pgRouting**.
 
 ## 🔍 Data & honesty
 
-Roads, critical facilities and 1,396 building footprints come from **© OpenStreetMap contributors (ODbL)**; 6,067 more buildings are procedurally generated to fill unmapped blocks and are flagged in the dataset. Traffic demand, electrical loads and incidents are **synthetic, seeded and uncalibrated**: SYNAPSE compares strategies — it does not forecast Medellín's real traffic.
+Roads, rail lines, stations, critical facilities and building footprints come from **© OpenStreetMap contributors (ODbL)**. Where a downtown is only partly mapped (Medellín, Bogotá) extra buildings are procedurally generated to fill the blocks and are flagged in the dataset. Line colours come from OSM when tagged (New York, the Medellín tramway); otherwise distinct non-official colours are used. Bogotá's Metro Line 1 is mapped as under construction, so it carries no trains. Traffic demand, electrical loads and incidents are **synthetic, seeded and uncalibrated**: SYNAPSE compares strategies — it does not forecast Medellín's real traffic.
 
 ## 🗺️ Roadmap
 
 - [ ] Public deployment (static front end + managed PostGIS)
-- [ ] Medellín Metro, pedestrians and time-of-day demand curves
+- [x] Rail transit, time-of-day demand and multiple cities
+- [ ] Pedestrians and bus networks (BRT such as TransMilenio and Metroplús)
 - [ ] Calibration against open traffic counts · more cities
 - [ ] Alembic migrations, observability (Prometheus/OpenTelemetry)
 

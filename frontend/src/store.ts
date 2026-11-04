@@ -73,6 +73,8 @@ export interface XaiCard {
 export interface LabRun {
   id: number
   scenario: string
+  /** city the experiment ran in (absent on runs saved before multi-city support = medellin) */
+  city?: string
   a: ExperimentResult[]
   b: ExperimentResult[]
   labelA: string
@@ -92,6 +94,7 @@ interface UI {
   selected: number | null
   follow: boolean
   scenarioId: string
+  cityId: string
   params: SimParams
   branches: Branch[]
   focus: { x: number; z: number; dist?: number; n: number } | null
@@ -124,6 +127,7 @@ export const useUI = create<UI>((set, get) => ({
   selected: null,
   follow: false,
   scenarioId: 'baseline',
+  cityId: 'medellin',
   params: { ...DEFAULT_PARAMS },
   branches: [],
   focus: null,

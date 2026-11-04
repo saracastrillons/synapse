@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { runtime } from '../runtime'
 import { useUI } from '../store'
-import { SCENARIOS } from '../sim/scenarios'
+import { scenarioById } from '../sim/scenarios'
 import { API_URL, addComment, comments, connect, createProject, fetchRun, invite, logout, openProject, saveScenario, share, signIn, useCloud, type CommentRec, type RunRec } from '../cloud'
 import { pushRun } from '../lab'
 import { Icon } from './Icons'
@@ -52,7 +52,7 @@ function RunCard({ r, onOpen }: { r: RunRec; onOpen: () => void }) {
   const [list, setList] = useState<CommentRec[]>([])
   const [text, setText] = useState('')
   const [link, setLink] = useState('')
-  const sc = SCENARIOS.find((s) => s.id === r.preset)
+  const sc = scenarioById(r.preset)
   const sig = r.stats.filter((s) => s.p_value != null && s.p_value < 0.05).length
   useEffect(() => {
     if (open) comments(r.id).then(setList).catch(() => {})
@@ -186,7 +186,7 @@ export function CloudPanel() {
               {canEdit && (
                 <form className="row" style={{ gap: 6, marginBottom: 8 }} onSubmit={(e) => {
                   e.preventDefault()
-                  const sc = SCENARIOS.find((s) => s.id === scenarioId)
+                  const sc = scenarioById(scenarioId)
                   run(async () => { await saveScenario(scName.trim() || `${sc?.name} · seed ${params.seed}`, scenarioId, params, sc?.intervention); setScName('') })
                 }}>
                   <input style={input} value={scName} onChange={(e) => setScName(e.target.value)} placeholder="Save the live scenario as…" />
@@ -196,7 +196,7 @@ export function CloudPanel() {
               {cloud.scenarios.map((s) => (
                 <div key={s.id} className="card">
                   <div className="between"><b style={{ fontSize: 12 }}>{s.name}</b><span className="chip mono">v{s.version} · seed {s.params.seed}</span></div>
-                  <div className="muted" style={{ fontSize: 11, marginTop: 3 }}>{SCENARIOS.find((x) => x.id === s.preset)?.name ?? s.preset} · {s.params.vehicles} vehicles · {s.params.signals} signals</div>
+                  <div className="muted" style={{ fontSize: 11, marginTop: 3 }}>{scenarioById(s.preset)?.name ?? s.preset} · {s.params.vehicles} vehicles · {s.params.signals} signals</div>
                   <div className="row" style={{ gap: 6, marginTop: 8 }}>
                     <button className="btn small" onClick={() => { runtime.loadScenario(s.preset, s.params); useUI.setState({ paused: false }) }}><Icon.play /> Run live</button>
                     <button className="btn small" onClick={async () => { const u = await share('scenario', s.id); setScLink({ ...scLink, [s.id]: u }); navigator.clipboard?.writeText(u).catch(() => {}) }}>{scLink[s.id] ? 'Link copied ✓' : 'Public link'}</button>

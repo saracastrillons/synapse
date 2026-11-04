@@ -1,6 +1,7 @@
 import { api, useCloud } from '../cloud'
 import { clock, runtime } from '../runtime'
 import { fmtDuration } from '../sim/engine'
+import { headwayAt } from '../sim/transit'
 import type { ScheduledEvent, SimParams } from '../sim/types'
 import { useUI, type XaiCard } from '../store'
 import {
@@ -34,7 +35,7 @@ export function resetAgent() {
 
 const LIMITS: Record<string, [number, number]> = {
   vehicles: [200, 2400], capacity: [0.5, 1.5], smartNav: [0, 1], storm: [0, 1], powerDemand: [0.6, 1.6],
-  repairCrews: [1, 4], ambulances: [1, 3], incidentRate: [0, 20],
+  repairCrews: [1, 4], ambulances: [1, 3], incidentRate: [0, 20], startHour: [0, 23.5], metro: [0, 1],
 }
 const INTEGER = new Set(['vehicles', 'repairCrews', 'ambulances'])
 
@@ -48,7 +49,7 @@ export function sanitizeParams(raw: unknown): Partial<SimParams> {
       const x = Math.min(hi, Math.max(lo, v))
       out[k] = INTEGER.has(k) ? Math.round(x) : x
     } else if (k === 'signals' && (v === 'fixed' || v === 'adaptive')) out[k] = v
-    else if (k === 'preemption' && typeof v === 'boolean') out[k] = v
+    else if ((k === 'preemption' || k === 'dynamicDemand') && typeof v === 'boolean') out[k] = v
   }
   return out as Partial<SimParams>
 }
@@ -249,6 +250,34 @@ async function execTool(ctx: Ctx, name: string, args: Record<string, unknown>, t
       }, (r) => r.status)
     }
 
+    case 'transit_status': {
+      const sys = sim.transit
+      const sec = sim.secOfDay()
+      const held = sim.state.transitHold != null
+      const trains = sys.trains(sim.transitSec())
+      return tool(ctx, name, args, () => ({
+        city: runtime.city.name,
+        service_level: held ? 0 : sim.state.params.metro,
+        riders_per_hour: Math.round(sim.state.metrics.riders),
+        lines: sys.lines.map((l, i) => ({
+          ref: l.ref, name: l.name, mode: l.mode, stations: l.stations.map((s) => s.name), km_in_twin: +(l.len / 1000).toFixed(2),
+          trains_in_service: trains.filter((t) => t.line === i).length,
+          headway_min: held ? null : +(headwayAt(l.mode, sec % 86400, Math.max(sim.state.params.metro, 0.001)) / 60).toFixed(1),
+        })),
+        note: sys.lines.length ? undefined : 'This city has no rail lines in the twin',
+      }), (r) => r.lines.length ? `${r.lines.length} lines · ${trains.length} trains · ${r.riders_per_hour.toLocaleString()} riders/h` : 'no rail lines')
+    }
+
+    case 'set_rail_service': {
+      const level = Math.min(1, Math.max(0, Number(args.level)))
+      return tool(ctx, name, { level }, () => {
+        if (!sim.transit.lines.length) return { error: 'This city has no rail lines in the twin' }
+        sim.setMetro(level)
+        runtime.publish(true)
+        return { service_level: level, extra_road_demand_pct: Math.round((1 - level) * 18) }
+      }, (r) => ('error' in r ? String(r.error) : `rail service at ${Math.round(level * 100)}%`))
+    }
+
     case 'focus_map': {
       const s = streetOrError(args.street)
       return tool(ctx, name, args, (): Record<string, unknown> => {
@@ -289,7 +318,7 @@ export async function ask(text: string, engine: 'llm' | 'local') {
   const id = ui.pushChat({ role: 'ai', text: lang === 'es' ? 'Gemini está planificando…' : 'Gemini is planning…', pending: true, tools: [], engine: 'llm', startedAt: Date.now() })
   const ctx: Ctx = { id, lang, tools: [], L: (en, es) => (lang === 'es' ? es : en) }
   const state = runtime.sim.state
-  const context = `[context: simulated clock ${clock(state.t)}, scenario "${useUI.getState().scenarioId}", ${state.metrics.activeIncidents} active incidents]`
+  const context = `[context: city ${runtime.city.name} (${runtime.city.area}), simulated clock ${clock(state.t)}, scenario "${useUI.getState().scenarioId}", ${state.metrics.activeIncidents} active incidents, rail ${runtime.sim.transit.lines.length ? `${runtime.sim.transit.lines.map((l) => l.ref).join('/')} at ${Math.round(state.params.metro * 100)}% service` : 'none'}]`
   const turn: Content[] = [{ role: 'user', parts: [{ text: `${text}\n\n${context}` }] }]
   const ts: TurnState = { proposals: [] }
   let final = ''

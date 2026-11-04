@@ -1,6 +1,8 @@
 import { RoadGraph, type DEdge } from './graph'
 import { findRoute, type Algorithm, type RouteResult } from './routing'
 import { hashSeed, nextRandom } from './rng'
+import { demandProfile, hourAt } from './timeofday'
+import { TransitSystem } from './transit'
 import type {
   CityData, DispatchDecision, Incident, IncidentKind, Metrics, ScheduledEvent, Signal, SimParams, SimState,
   Substation, Unit, Vehicle, VehicleKind,
@@ -16,6 +18,8 @@ const HISTORY_EVERY = 5
 const MAX_HISTORY = 2400
 
 const SCENE_TIME: Record<IncidentKind, number> = { accident: 150, medical: 120, fire: 240 }
+/** share of trips that move to the road network when rail service is fully suspended */
+const TRANSIT_SHIFT = 0.18
 
 export function sectorOf(subs: { x: number; z: number }[], x: number, z: number): number {
   let best = 0
@@ -28,6 +32,15 @@ export function sectorOf(subs: { x: number; z: number }[], x: number, z: number)
     }
   })
   return best
+}
+
+/** Readable substation names in the city's language ("Substation" alone → "Substation #2"). */
+function substationName(raw: string, i: number, country: string) {
+  const spanish = /colombia|m[eé]xico|espa|argentina|chile|per[uú]|ecuador|venezuela|bolivia|uruguay|paraguay/i.test(country)
+  const word = spanish ? 'Subestación' : 'Substation'
+  if (/^(substation|subestaci[oó]n)$/i.test(raw.trim())) return `${word} #${i + 1}`
+  if (/substation|subestaci[oó]n/i.test(raw)) return raw.replace(/Subestacion/g, 'Subestación')
+  return `${word} ${raw}`
 }
 
 export function fmtDuration(sec: number): string {
@@ -52,6 +65,7 @@ export function fmtDuration(sec: number): string {
  */
 export class Simulation {
   readonly g: RoadGraph
+  readonly transit: TransitSystem
   readonly data: CityData
   state!: SimState
 
@@ -124,6 +138,7 @@ export class Simulation {
     for (const p of data.pois) {
       if (p.kind === 'fire') this.unitHomes.push({ kind: 'fire', node: g.nearestNode(p.x, p.z), name: p.name })
     }
+    this.transit = new TransitSystem(data, Math.max(params.metro, 0.001))
     this.reset(params, events)
   }
 
@@ -167,7 +182,7 @@ export class Simulation {
     const nE = g.edges.length
     const subsPoi = this.data.pois.filter((p) => p.kind === 'substation')
     const subs: Substation[] = subsPoi.map((p, i) => ({
-      name: p.name === 'Substation' ? `Subestación #${i + 1}` : /^sub/i.test(p.name) ? p.name.replace('Subestacion', 'Subestación') : `Subestación ${p.name}`,
+      name: substationName(p.name, i, this.data.meta.country),
       x: p.x, z: p.z, capacity: this.baseLoad[i] * 1.22, load: this.baseLoad[i], online: true, repairAt: 0, failures: 0,
     }))
     const units: Unit[] = []
@@ -194,10 +209,12 @@ export class Simulation {
       edgeAlertAt: new Float32Array(nE).fill(-1e9),
       incidents: [], units, subs, alerts: [], history: [], metrics: emptyMetrics(),
       arrivalsLog: [], tripLog: [], responseLog: [], events: [...events].sort((a, b) => a.t - b.t),
-      rerouteQueue: [], nextAlertId: 1, removed: 0, arrivals: 0, acc: { second: 0, sample: 0, spawnBudget: 0 },
+      rerouteQueue: [], nextAlertId: 1, removed: 0, arrivals: 0, transitHold: null, acc: { second: 0, sample: 0, spawnBudget: 0 },
     }
     // warm start: populate the network instantly so experiments begin in a loaded state
-    for (let i = 0; i < params.vehicles; i++) this.spawnVehicle(true)
+    this.syncTransit()
+    const target = this.demandTarget()
+    for (let i = 0; i < target; i++) this.spawnVehicle(true)
     this.alert('info', `Simulation initialised · seed ${params.seed} · ${params.vehicles} agents · ${this.signalCount} signalised junctions`)
   }
 
@@ -381,13 +398,13 @@ export class Simulation {
     this.moveEmergency()
     this.processReroutes()
     if (st.vehicles.some((v) => v.edge < 0)) st.vehicles = st.vehicles.filter((v) => v.edge >= 0)
-    // keep demand at target
-    const cars = st.vehicles.length - st.units.filter((u) => u.status === 'busy').length
+    // keep demand at the time-of-day target (surplus vehicles leave naturally as they arrive)
+    const target = this.demandTarget()
+    const busy = st.units.filter((u) => u.status === 'busy').length
     st.acc.spawnBudget = Math.min(10, st.acc.spawnBudget + DT * 6)
-    while (cars < st.params.vehicles && st.acc.spawnBudget >= 1 && st.vehicles.length < st.params.vehicles + 40) {
+    while (st.vehicles.length - busy < target && st.acc.spawnBudget >= 1) {
       st.acc.spawnBudget -= 1
       if (!this.spawnVehicle()) break
-      if (st.vehicles.length - st.units.filter((u) => u.status === 'busy').length >= st.params.vehicles) break
     }
     st.acc.second += DT
     if (st.acc.second >= 1 - 1e-9) {
@@ -426,6 +443,9 @@ export class Simulation {
         case 'demand':
           st.params.vehicles = ev.vehicles
           this.alert('info', `Traffic demand changed to ${ev.vehicles} vehicles`)
+          break
+        case 'metro':
+          this.setMetro(ev.level, ev.label)
           break
       }
     }
@@ -718,7 +738,7 @@ export class Simulation {
       const m = st.metrics
       st.history.push({
         t: Math.round(st.t), speed: m.speed, congestion: m.congestion, throughput: m.throughput, co2: m.co2,
-        power: m.power, response: m.response, trip: m.trip, vehicles: m.vehicles, stopped: m.stopped,
+        power: m.power, response: m.response, trip: m.trip, vehicles: m.vehicles, stopped: m.stopped, riders: m.riders,
       })
       if (st.history.length > MAX_HISTORY) st.history.shift()
     }
@@ -925,7 +945,58 @@ export class Simulation {
       removed: st.removed,
       activeIncidents: st.incidents.filter((i) => i.status !== 'resolved').length,
       outages: st.subs.filter((s) => !s.online).length,
+      riders: st.transitHold != null ? 0 : this.transit.ridersPerHour(this.secOfDay()),
+      demandTarget: this.demandTarget(),
+      hour: this.hour(),
+      trainsInService: this.transit.lines.length ? this.transit.trains(this.transitSec()).length : 0,
     }
+  }
+
+  // ───────────────────────────────────────── time of day & rail transit
+  hour() {
+    return hourAt(this.state.params.startHour, this.state.t)
+  }
+
+  secOfDay() {
+    return this.state.params.startHour * 3600 + this.state.t
+  }
+
+  /** clock used for train positions: frozen while service is suspended */
+  transitSec() {
+    return this.state.transitHold ?? this.secOfDay()
+  }
+
+  /** private vehicles the demand model wants on the road right now */
+  demandTarget() {
+    const p = this.state.params
+    const base = p.dynamicDemand ? p.vehicles * demandProfile(this.hour()) : p.vehicles
+    const level = this.state.transitHold != null ? 0 : p.metro
+    const shift = this.transit.lines.length ? (1 - Math.min(1, level)) * TRANSIT_SHIFT : 0
+    return Math.round(base * (1 + shift))
+  }
+
+  /** keep the timetable and the suspension clock consistent with params.metro */
+  private syncTransit() {
+    const st = this.state
+    const level = st.params.metro
+    if (level <= 0.001) {
+      if (st.transitHold == null) st.transitHold = this.secOfDay()
+    } else {
+      st.transitHold = null
+      if (Math.abs(this.transit.serviceLevel - level) > 1e-6) this.transit.buildTimetable(level)
+    }
+  }
+
+  setMetro(level: number, label?: string) {
+    if (!this.transit.lines.length) return
+    const before = this.state.params.metro
+    this.state.params.metro = Math.max(0, Math.min(1, level))
+    this.syncTransit()
+    if (Math.abs(before - this.state.params.metro) < 1e-6) return
+    const shift = Math.round((1 - this.state.params.metro) * TRANSIT_SHIFT * 100)
+    this.alert(level <= 0.001 ? 'crit' : 'info', label ?? (level <= 0.001
+      ? `Rail service suspended · trains held at their positions · ~${shift}% of riders move to the roads`
+      : `Rail service at ${Math.round(level * 100)}% of normal frequency${shift ? ` · ~${shift}% of riders move to the roads` : ''}`))
   }
 
   // ───────────────────────────────────────── public API
@@ -935,12 +1006,15 @@ export class Simulation {
 
   restore(s: SimState) {
     this.state = structuredClone(s)
+    this.syncTransit()
     this.refreshBlocked()
     this.bucket()
   }
 
   setParams(patch: Partial<SimParams>) {
-    Object.assign(this.state.params, patch)
+    const { metro, ...rest } = patch
+    Object.assign(this.state.params, rest)
+    if (metro !== undefined) this.setMetro(metro)
   }
 
   addEvent(ev: ScheduledEvent) {
@@ -976,6 +1050,6 @@ export class Simulation {
 function emptyMetrics(): Metrics {
   return {
     t: 0, speed: 0, congestion: 0, throughput: 0, co2: 0, power: 1, response: 0, trip: 0, vehicles: 0, stopped: 0,
-    arrivals: 0, removed: 0, activeIncidents: 0, outages: 0,
+    arrivals: 0, removed: 0, activeIncidents: 0, outages: 0, riders: 0, demandTarget: 0, hour: 7, trainsInService: 0,
   }
 }

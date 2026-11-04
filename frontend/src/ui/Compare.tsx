@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { create } from 'zustand'
 import { api } from '../cloud'
 import { LAB_KPIS, compare, download, fmtKpi, seriesOf, verdict } from '../lab'
-import { SCENARIOS } from '../sim/scenarios'
+import { scenarioById } from '../sim/scenarios'
 import type { LabRun } from '../store'
 import { Legend, LineChart } from './Charts'
 import { Icon } from './Icons'
@@ -78,7 +78,7 @@ export function CompareModal() {
   if (r1.run.scenario !== r2.run.scenario) warnings.push('Different scenarios — you are comparing different situations, not only different decisions.')
   if (r1.run.duration !== r2.run.duration) warnings.push('Different simulated durations.')
   if (seedsA !== seedsB) warnings.push('Different seeds: the comparison is not paired, so random variation is included.')
-  const name = (p: Pick) => SCENARIOS.find((s) => s.id === p.run.scenario)?.name ?? p.run.scenario
+  const name = (p: Pick) => scenarioById(p.run.scenario)?.name ?? p.run.scenario
   const pval = (k: string) => server?.stats.find((s) => s.kpi === k)?.p_value
   const exportCsv = () => {
     const lines = ['kpi,unit,run1,run2,delta_pct,winner' + (server ? ',p_value' : '')]

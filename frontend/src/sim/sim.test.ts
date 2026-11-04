@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { Simulation } from './engine'
 import { RoadGraph } from './graph'
 import { findRoute } from './routing'
-import { SCENARIOS } from './scenarios'
+import { buildScenarios } from './scenarios'
+import { cityById } from './cities'
 import { runExperiment } from './experiment'
 import { DEFAULT_PARAMS, type CityData } from './types'
 
@@ -86,9 +87,9 @@ describe('simulation', () => {
   })
 
   it('dispatches an ambulance to a blocking accident and clears it', () => {
-    const preset = SCENARIOS.find((s) => s.id === 'oriental')!
+    const preset = buildScenarios(cityById('medellin'), data).find((s) => s.id === 'accident')!
     const sim = new Simulation(data, { ...params, incidentRate: 0 })
-    const events = preset.events(sim.g, sim.state.subs.map((s) => s.name)).map((e) => ({ ...e, duration: 60 }))
+    const events = preset.events({ g: sim.g, data, city: cityById('medellin'), subs: sim.state.subs }).map((e) => ({ ...e, duration: 60 }))
     sim.reset({ ...params, incidentRate: 0 }, events)
     sim.run(400)
     const inc = sim.state.incidents[0]
@@ -113,5 +114,66 @@ describe('simulation', () => {
     const r = runExperiment(sim, { label: 'test', params, events: [], duration: 180 })
     expect(r.summary.speed).toBeGreaterThan(0)
     expect(r.history.length).toBeGreaterThan(10)
+  })
+})
+
+describe('time of day', () => {
+  it('demand has a morning and an evening peak and a deep night trough', async () => {
+    const { demandProfile } = await import('./timeofday')
+    expect(demandProfile(7.4)).toBeCloseTo(1, 2)
+    expect(demandProfile(18)).toBeGreaterThan(0.9)
+    expect(demandProfile(12.5)).toBeLessThan(demandProfile(7.4))
+    expect(demandProfile(3)).toBeLessThan(0.15)
+  })
+
+  it('a night simulation carries far fewer vehicles than the morning peak', () => {
+    const morning = new Simulation(data, { ...params, startHour: 7.5 })
+    const night = new Simulation(data, { ...params, startHour: 3 })
+    expect(night.state.vehicles.length).toBeLessThan(morning.state.vehicles.length * 0.25)
+    expect(morning.state.vehicles.length).toBeGreaterThan(params.vehicles * 0.9)
+  })
+})
+
+describe('rail transit', () => {
+  it('loads the real Medellín lines with their stations', () => {
+    const sim = new Simulation(data, params)
+    const refs = sim.transit.lines.map((l) => l.ref)
+    expect(refs).toEqual(expect.arrayContaining(['A', 'B', 'T-A']))
+    const lineA = sim.transit.lines.find((l) => l.ref === 'A')!
+    expect(lineA.stations.map((s) => s.name)).toEqual(expect.arrayContaining(['San Antonio', 'Parque Berrío', 'Alpujarra']))
+  })
+
+  it('runs a timetable: trains by day, none at night, positions deterministic', () => {
+    const sim = new Simulation(data, params)
+    const at8 = sim.transit.trains(8 * 3600)
+    expect(at8.length).toBeGreaterThan(4)
+    expect(sim.transit.trains(8 * 3600)).toEqual(at8)
+    expect(sim.transit.trains(2 * 3600)).toHaveLength(0)
+    for (const tr of at8) expect(tr.s).toBeGreaterThanOrEqual(0)
+  })
+
+  it('suspending the metro freezes trains, zeroes riders and pushes trips onto the roads', () => {
+    const sim = new Simulation(data, { ...params, incidentRate: 0 })
+    sim.run(20)
+    const before = sim.demandTarget()
+    expect(sim.state.metrics.riders).toBeGreaterThan(0)
+    sim.setMetro(0)
+    const frozen = sim.transit.trains(sim.transitSec())
+    sim.run(30)
+    expect(sim.transit.trains(sim.transitSec())).toEqual(frozen)
+    expect(sim.state.metrics.riders).toBe(0)
+    expect(sim.demandTarget()).toBeGreaterThan(before * 1.1)
+    sim.setMetro(1)
+    expect(sim.state.transitHold).toBeNull()
+  })
+
+  it('Time Machine restores the metro state with the snapshot', () => {
+    const sim = new Simulation(data, params)
+    sim.run(10)
+    const snap = sim.snapshot()
+    sim.setMetro(0)
+    sim.restore(snap)
+    expect(sim.state.params.metro).toBe(1)
+    expect(sim.state.transitHold).toBeNull()
   })
 })

@@ -1,25 +1,27 @@
 """
-SYNAPSE data pipeline — builds the Medellín digital-twin dataset from OpenStreetMap.
+SYNAPSE data pipeline — builds the digital-twin datasets from OpenStreetMap.
 
-Downloads roads, buildings and critical infrastructure for a bounded area of
-Medellín (Centro / La Candelaria) through the public Overpass API and converts
+Downloads roads, buildings, critical infrastructure and rail transit for a
+bounded downtown area of each city through the public Overpass API and converts
 them into a compact JSON file consumed by the simulation engine:
 
   * a simplified, directed road graph (intersections + polyline edges)
   * building footprints with estimated heights
   * points of interest: hospitals, fire stations, police, power substations
+  * rail transit lines (metro, light rail, tram) with stations and elevation
 
 Coordinates are projected to a local metric plane (x = east, z = south) centred
 on the bounding box, so the frontend can work directly in meters.
 
-Usage:  py pipeline/fetch_osm.py
-Output: frontend/public/data/medellin.json   (© OpenStreetMap contributors, ODbL)
+Usage:  py pipeline/fetch_osm.py [medellin|bogota|newyork|all]
+Output: frontend/public/data/<city>.json   (© OpenStreetMap contributors, ODbL)
 """
 from __future__ import annotations
 
 import json
 import math
 import random
+import re
 import sys
 import time
 import urllib.parse
@@ -27,12 +29,21 @@ import urllib.request
 from collections import defaultdict
 from pathlib import Path
 
-BBOX = (6.236, -75.580, 6.264, -75.558)  # south, west, north, east
+CITIES = {
+    # bbox: south, west, north, east · tall: height range (m) of untagged towers near the core
+    "medellin": {"bbox": (6.236, -75.580, 6.264, -75.558), "city": "Medellín", "area": "Centro · La Candelaria",
+                 "country": "Colombia", "cache": "", "tall": 55},
+    "bogota": {"bbox": (4.590, -74.087, 4.618, -74.063), "city": "Bogotá", "area": "Centro · La Candelaria · Santa Fe",
+               "country": "Colombia", "cache": "bogota-", "tall": 45},
+    "newyork": {"bbox": (40.702, -74.019, 40.724, -73.993), "city": "New York", "area": "Lower Manhattan",
+                "country": "United States", "cache": "newyork-", "tall": 120},
+}
 MIRRORS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter",
            "https://maps.mail.ru/osm/tools/overpass/api/interpreter"]
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / "pipeline" / ".cache"
-OUT = ROOT / "frontend" / "public" / "data" / "medellin.json"
+OUT_DIR = ROOT / "frontend" / "public" / "data"
+MAX_BUILDINGS = 12_000
 
 ROAD_CLASSES = {
     # highway tag: (class, lanes, speed km/h)
@@ -45,10 +56,22 @@ ROAD_CLASSES = {
     "living_street": ("local", 1, 20),
 }
 
-LAT0 = (BBOX[0] + BBOX[2]) / 2
-LON0 = (BBOX[1] + BBOX[3]) / 2
 M_PER_DEG_LAT = 110_574.0
-M_PER_DEG_LON = 111_320.0 * math.cos(math.radians(LAT0))
+CITY = "medellin"
+BBOX = CITIES[CITY]["bbox"]
+LAT0 = LON0 = M_PER_DEG_LON = 0.0
+
+
+def configure(city: str) -> None:
+    global CITY, BBOX, LAT0, LON0, M_PER_DEG_LON
+    CITY = city
+    BBOX = CITIES[city]["bbox"]
+    LAT0 = (BBOX[0] + BBOX[2]) / 2
+    LON0 = (BBOX[1] + BBOX[3]) / 2
+    M_PER_DEG_LON = 111_320.0 * math.cos(math.radians(LAT0))
+
+
+configure(CITY)
 
 
 def project(lat: float, lon: float) -> tuple[float, float]:
@@ -58,7 +81,7 @@ def project(lat: float, lon: float) -> tuple[float, float]:
 
 def overpass(name: str, query: str) -> dict:
     CACHE.mkdir(parents=True, exist_ok=True)
-    cached = CACHE / f"{name}.json"
+    cached = CACHE / f"{CITIES[CITY]['cache']}{name}.json"
     if cached.exists():
         return json.loads(cached.read_text(encoding="utf-8"))
     body = urllib.parse.urlencode({"data": query}).encode()
@@ -112,13 +135,18 @@ def build_roads(data: dict) -> dict:
         except ValueError:
             pass
         try:
-            speed = int(str(tags.get("maxspeed", speed)).split()[0])
+            raw_speed = str(tags.get("maxspeed", speed))
+            speed = int(raw_speed.split()[0])
+            if "mph" in raw_speed:  # e.g. New York: "25 mph"
+                speed = round(speed * 1.609)
         except ValueError:
             pass
         oneway = tags.get("oneway") in ("yes", "1", "true") or tags.get("junction") == "roundabout" \
             or tags["highway"] in ("motorway", "motorway_link")
         reverse = tags.get("oneway") == "-1"
         ids = [n for n in w["nodes"] if n in nodes]
+        if len(ids) < 2:
+            continue
         if reverse:
             ids.reverse()
             oneway = True
@@ -190,6 +218,7 @@ def largest_scc(n: int, adj, radj) -> set[int]:
 def build_buildings(data: dict) -> list[dict]:
     nodes = {n["id"]: (n["lat"], n["lon"]) for n in data["elements"] if n["type"] == "node"}
     rng = random.Random(42)
+    tall = CITIES[CITY]["tall"]
     out = []
     for w in data["elements"]:
         if w["type"] != "way" or "building" not in w.get("tags", {}):
@@ -211,14 +240,14 @@ def build_buildings(data: dict) -> list[dict]:
                 pass
         estimated = height is None
         if estimated:
-            # Centro de Medellín: mostly 2–5 storeys, with taller towers near the core.
+            # downtown: mostly low/mid-rise, with taller towers near the core
             x, z = pts[0]
             core = max(0.0, 1 - math.hypot(x, z) / 1400)
-            height = 6 + rng.random() * 10 + (rng.random() ** 3) * 55 * core
+            height = 6 + rng.random() * 10 + (rng.random() ** 3) * tall * core
         area = abs(sum(pts[i][0] * pts[i - 1][1] - pts[i - 1][0] * pts[i][1] for i in range(len(pts)))) / 2
         if area < 25:
             continue
-        out.append({"p": [[round(x), round(z)] for x, z in pts], "h": round(height, 1), "est": estimated})
+        out.append({"p": [[round(x), round(z)] for x, z in pts], "h": round(min(height, 450), 1), "est": estimated})
     return out
 
 
@@ -231,7 +260,7 @@ def seg_dist(px: float, pz: float, a: list[float], b: list[float]) -> tuple[floa
 
 
 def fill_blocks(graph: dict, osm_buildings: list[dict], half_w: float, half_h: float) -> list[dict]:
-    """OSM only maps part of Centro's buildings. Fill the remaining city blocks with
+    """OSM only maps part of some downtowns' buildings. Fill the remaining city blocks with
     procedural footprints aligned to the nearest street (flag est="proc")."""
     cell = 40.0
     segs = defaultdict(list)
@@ -296,15 +325,174 @@ def build_pois(data: dict) -> list[dict]:
     return out
 
 
-def main() -> None:
+# ───────────────────────────── rail transit
+RAIL_MODES = {"subway": "metro", "light_rail": "metro", "train": "rail", "monorail": "metro", "tram": "tram"}
+DEFAULT_COLOURS = {"metro": "#22d3ee", "rail": "#a78bfa", "tram": "#34d399"}
+# lines without an OSM colour get distinct (non-official) colours so they stay distinguishable
+FALLBACK_PALETTE = ["#e879f9", "#f59e0b", "#a3e635", "#fb7185", "#38bdf8", "#34d399"]
+
+
+def _stitch(ways: list[list[tuple[float, float, int]]]) -> list[tuple[float, float, int]]:
+    """Chain member ways (each a list of (lat, lon, elevation)) into one ordered polyline."""
+    line: list[tuple[float, float, int]] = []
+    for i, w in enumerate(ways):
+        if not w:
+            continue
+        if not line:
+            line = list(w)
+            continue
+        if i == 1:
+            # the first way may be stored backwards: orient it towards the second one
+            ends = [(math.dist(line[-1][:2], w[0][:2]), False), (math.dist(line[-1][:2], w[-1][:2]), False),
+                    (math.dist(line[0][:2], w[0][:2]), True), (math.dist(line[0][:2], w[-1][:2]), True)]
+            if min(ends)[1]:
+                line.reverse()
+        end = line[-1]
+        d_fwd = math.dist(w[0][:2], end[:2])
+        d_rev = math.dist(w[-1][:2], end[:2])
+        line.extend(w if d_fwd <= d_rev else list(reversed(w)))
+    return line
+
+
+def clean_station(name: str) -> str:
+    """'Estación Metro San Antonio. Línea A' -> 'San Antonio', 'hospital metro' -> 'Hospital'."""
+    n = re.sub(r"[.,]?\s*(L[ií]nea|Line)\s+\S+$", "", name.strip(), flags=re.I)
+    for _ in range(3):
+        n = re.sub(r"^(Estaci[oó]n|Station|de|del|Metro|Tranv[ií]a|Subway)\s+", "", n, flags=re.I)
+        n = re.sub(r"\s+(Metro|Station|Estaci[oó]n|Subway)$", "", n, flags=re.I)
+    n = n.strip(" .-")
+    return n[:1].upper() + n[1:] if n else name
+
+
+def _is_rail_stop(tags: dict) -> bool:
+    """Bus terminals are often tagged public_transport=station too: keep rail stops only."""
+    if tags.get("railway") in ("station", "halt", "tram_stop", "stop"):
+        return True
+    if any(tags.get(k) == "yes" for k in ("subway", "train", "light_rail", "tram", "monorail")):
+        return True
+    return tags.get("station") in ("subway", "light_rail", "train", "tram") or tags.get("public_transport") == "stop_position" and tags.get("bus") != "yes"
+
+
+def _elevation(tags: dict) -> int:
+    layer = str(tags.get("layer", "0"))
+    if tags.get("tunnel") in ("yes", "building_passage") or layer.startswith("-"):
+        return -1
+    if tags.get("bridge") or (layer.isdigit() and int(layer) > 0):
+        return 1
+    return 0
+
+
+def build_transit(rel_data: dict, way_tags: dict, station_data: dict, half_w: float, half_h: float) -> dict:
+    margin = 150
+    best: dict[str, dict] = {}
+    for rel in rel_data.get("elements", []):
+        if rel.get("type") != "relation":
+            continue
+        tags = rel.get("tags", {})
+        mode = RAIL_MODES.get(tags.get("route", ""))
+        if not mode:
+            continue
+        ways = []
+        building = False  # any track still under construction or only proposed → line not in service
+        for m in rel.get("members", []):
+            if m.get("type") != "way" or str(m.get("role", "")).startswith("platform") or not m.get("geometry"):
+                continue
+            wt = way_tags.get(m["ref"], {})
+            building = building or wt.get("railway") in ("construction", "proposed") or "construction" in wt
+            elev = _elevation(wt)
+            if mode == "tram" and elev > 0:
+                elev = 0  # street-running trams: layer tags refer to short bridges, not a viaduct
+            ways.append([(g["lat"], g["lon"], elev) for g in m["geometry"] if g])
+        pts = [(*project(lat, lon), e) for lat, lon, e in _stitch(ways)]
+        # longest contiguous run inside the twin's extent
+        runs, cur = [], []
+        for p in pts:
+            if abs(p[0]) <= half_w + margin and abs(p[1]) <= half_h + margin:
+                cur.append(p)
+            elif cur:
+                runs.append(cur)
+                cur = []
+        if cur:
+            runs.append(cur)
+        if not runs:
+            continue
+        length_of = lambda r: sum(math.dist(r[i][:2], r[i + 1][:2]) for i in range(len(r) - 1))
+        run = max(runs, key=length_of)
+        simple = [run[0]]
+        for p in run[1:]:
+            if math.dist(p[:2], simple[-1][:2]) >= 6:
+                simple.append(p)
+        length = length_of(simple)
+        if length < 300:
+            continue
+        ref = tags.get("ref") or tags.get("name", "?")
+        key = f"{mode}:{ref}"
+        if key in best and best[key]["len"] >= length:
+            continue
+        colour = tags.get("colour") or tags.get("color") or ""  # hex or CSS colour name
+        best[key] = {"id": key, "ref": ref, "name": tags.get("name", ref), "mode": mode, "colour": colour,
+                     "status": "construction" if building else "open",
+                     "pts": [[round(x, 1), round(z, 1), e] for x, z, e in simple], "len": round(length, 1), "stations": []}
+
+    lines = list(best.values())
+    # stations: snap each named station node to every line passing within 90 m
+    for el in station_data.get("elements", []):
+        name = el.get("tags", {}).get("name")
+        if not name or "lat" not in el:
+            continue
+        x, z = project(el["lat"], el["lon"])
+        for ln in lines:
+            pts = ln["pts"]
+            acc, best_d, best_s = 0.0, 1e9, 0.0
+            for i in range(len(pts) - 1):
+                a, b = pts[i], pts[i + 1]
+                seg = math.dist(a[:2], b[:2]) or 1e-9
+                t = max(0.0, min(1.0, ((x - a[0]) * (b[0] - a[0]) + (z - a[1]) * (b[1] - a[1])) / seg ** 2))
+                d = math.hypot(a[0] + t * (b[0] - a[0]) - x, a[1] + t * (b[1] - a[1]) - z)
+                if d < best_d:
+                    best_d, best_s = d, acc + t * seg
+                acc += seg
+            name = clean_station(name)
+            if best_d < 90 and all(s["name"] != name for s in ln["stations"]):
+                ln["stations"].append({"name": name, "s": round(best_s, 1)})
+    for ln in lines:
+        ln["stations"].sort(key=lambda s: s["s"])
+        merged = []  # separate platform nodes of one station
+        for st in ln["stations"]:
+            if merged and st["s"] - merged[-1]["s"] < 120:
+                if len(st["name"]) < len(merged[-1]["name"]):  # prefer the cleaner (shorter) name
+                    merged[-1] = {**merged[-1], "name": st["name"]}
+                continue
+            merged.append(st)
+        ln["stations"] = merged
+    lines = [ln for ln in lines if len(ln["stations"]) >= 2]
+    for i, ln in enumerate(sorted(lines, key=lambda l: (l["mode"], l["ref"]))):
+        ln["colour"] = ln["colour"] or FALLBACK_PALETTE[i % len(FALLBACK_PALETTE)]
+    return {"lines": sorted(lines, key=lambda l: (l["mode"], l["ref"]))}
+
+
+def build_city() -> None:
     b = bbox_str()
     roads = overpass("roads", f"""[out:json][timeout:120];
       way["highway"~"^({'|'.join(ROAD_CLASSES)})$"]({b}); (._;>;); out body;""")
-    buildings = overpass("buildings", f"""[out:json][timeout:120];
+    buildings = overpass("buildings", f"""[out:json][timeout:180];
       way["building"]({b}); (._;>;); out body;""")
     pois = overpass("pois", f"""[out:json][timeout:120];
       (nwr["amenity"~"^(hospital|fire_station|police)$"]({b});
        nwr["power"="substation"]({b}););
+      out center tags;""")
+    rail = "^(subway|light_rail|tram|train|monorail)$"
+    transit_rel = overpass("transit", f"""[out:json][timeout:180];
+      relation["route"~"{rail}"]({b}); out geom;""")
+    transit_ways = overpass("transit-ways", f"""[out:json][timeout:180];
+      relation["route"~"{rail}"]({b}); way(r); out tags;""")
+    # stations are mapped in several ways: station nodes, stop positions of the routes, named platforms
+    stations = overpass("stations", f"""[out:json][timeout:120];
+      (nwr["railway"~"^(station|halt|tram_stop)$"]({b}); nwr["public_transport"="station"]({b}););
+      out center tags;""")
+    stops = overpass("transit-stops", f"""[out:json][timeout:180];
+      relation["route"~"{rail}"]({b})->.r;
+      (node(r.r)["name"]; way(r.r)["public_transport"="platform"]["name"]; relation(r.r)["public_transport"="platform"]["name"];);
       out center tags;""")
 
     graph = build_roads(roads)
@@ -312,26 +500,49 @@ def main() -> None:
     places = build_pois(pois)
     half_w = (BBOX[3] - BBOX[1]) / 2 * M_PER_DEG_LON
     half_h = (BBOX[2] - BBOX[0]) / 2 * M_PER_DEG_LAT
-    procedural = fill_blocks(graph, blds, half_w, half_h)
+    procedural = fill_blocks(graph, blds, half_w, half_h) if len(blds) < MAX_BUILDINGS * 0.6 else []
     print(f"osm buildings={len(blds)} procedural={len(procedural)}")
     blds += procedural
+    if len(blds) > MAX_BUILDINGS:  # rendering budget: keep the largest footprints
+        area = lambda b: abs(sum(p[0] * q[1] - q[0] * p[1] for p, q in zip(b["p"], b["p"][1:] + b["p"][:1])))
+        blds = sorted(blds, key=lambda b: -area(b))[:MAX_BUILDINGS]
+    way_tags = {w["id"]: w.get("tags", {}) for w in transit_ways.get("elements", []) if w.get("type") == "way"}
+    station_points = {"elements": [
+        {"tags": el.get("tags", {}), "lat": el.get("lat", el.get("center", {}).get("lat")), "lon": el.get("lon", el.get("center", {}).get("lon"))}
+        for el in stations.get("elements", []) + stops.get("elements", [])
+        if (el.get("lat") is not None or el.get("center")) and _is_rail_stop(el.get("tags", {}))
+    ]}
+    transit = build_transit(transit_rel, way_tags, station_points, half_w, half_h)
     dataset = {
         "meta": {
-            "city": "Medellín", "area": "Centro · La Candelaria", "country": "Colombia",
+            "id": CITY, "city": CITIES[CITY]["city"], "area": CITIES[CITY]["area"], "country": CITIES[CITY]["country"],
             "center": {"lat": LAT0, "lon": LON0}, "bbox": BBOX,
             "extent": {"halfWidth": round(half_w), "halfHeight": round(half_h)},
             "source": "© OpenStreetMap contributors (ODbL) via Overpass API",
-            "notes": "Roads, POIs and buildings with est=false/true come from OSM (est=true: height estimated). "
+            "notes": "Roads, POIs, rail lines and buildings with est=false/true come from OSM (est=true: height estimated). "
                      "Buildings with est='proc' are procedurally generated to fill unmapped blocks.",
         },
         "roads": graph,
         "buildings": blds,
         "pois": places,
+        "transit": transit,
     }
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(json.dumps(dataset, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
+    out = OUT_DIR / f"{CITY}.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(dataset, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
     print(f"nodes={len(graph['nodes'])} edges={len(graph['edges'])} buildings={len(blds)} pois={len(places)}")
-    print(f"wrote {OUT} ({OUT.stat().st_size / 1e6:.2f} MB)")
+    for ln in transit["lines"]:
+        elev = sorted({p[2] for p in ln["pts"]})
+        print(f"  {ln['mode']:5} {ln['ref']:>6} {ln['name'][:42]:42} {ln['len']:6.0f} m  {len(ln['stations']):2} st  elev={elev} {ln['colour']}")
+    print(f"wrote {out} ({out.stat().st_size / 1e6:.2f} MB)")
+
+
+def main() -> None:
+    arg = sys.argv[1] if len(sys.argv) > 1 else "medellin"
+    for city in (list(CITIES) if arg == "all" else [arg]):
+        configure(city)
+        print(f"== {city}", flush=True)
+        build_city()
 
 
 if __name__ == "__main__":

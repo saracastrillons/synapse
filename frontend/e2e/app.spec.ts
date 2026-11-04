@@ -7,9 +7,11 @@ test.describe('SYNAPSE · core journeys', () => {
     page.on('pageerror', (e) => errors.push(e.message))
     await page.goto('/')
     await expect(page.getByRole('heading', { name: 'SYNAPSE' })).toBeVisible({ timeout: 60_000 })
-    await expect(page.locator('.city-item.on')).toContainText('Medellín')
+    await expect(page.locator('.city-item.on')).toHaveCount(3)
+    await expect(page.locator('.city-item.selected')).toContainText('Medellín')
     await enterCity(page)
-    await expect(page.locator('.kpi', { hasText: 'Agents' })).toContainText(/1[.,]?3\d\d/)
+    // 07:00 is just before the morning peak: ~89% of the 1,300 peak-hour vehicles
+    await expect(page.locator('.kpi', { hasText: 'Agents' })).toContainText(/1[.,]?1\d\d/)
     await expect(page.getByText('Medellín · Centro')).toBeVisible()
     // the simulation is running: the clock moves forward
     const t0 = await clockSeconds(page)

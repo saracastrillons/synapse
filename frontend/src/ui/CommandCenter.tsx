@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { ask, llmAvailable, resetAgent } from '../ai/agent'
 import { useCloud } from '../cloud'
+import { runtime } from '../runtime'
 import { useUI, type ChatMessage, type XaiCard } from '../store'
 import { Icon } from './Icons'
 
@@ -13,12 +14,18 @@ function readEngine() {
   }
 }
 
-const STARTERS: { title: string; prompt: string; icon: () => ReactNode }[] = [
-  { title: 'Restore traffic after a crash', prompt: 'A major accident just blocked Avenida Oriental. Find the fastest way to restore traffic flow', icon: Icon.block },
-  { title: 'Dispatch an ambulance', prompt: 'Send an ambulance to Carrera 54 and tell me if signal pre-emption is worth it', icon: Icon.cross },
-  { title: 'Stress-test the grid', prompt: '¿Qué pasa si una tormenta tumba la Subestación Central EPM? ¿Cómo nos recuperamos más rápido?', icon: Icon.storm },
-  { title: 'Find the bottlenecks', prompt: 'Where is the congestion right now and what would you change?', icon: Icon.target },
-]
+function starters(): { title: string; prompt: string; icon: () => ReactNode }[] {
+  const [a0, a1] = runtime.city.arterials.map((a) => a.name)
+  const hasRail = runtime.sim.transit.lines.length > 0
+  return [
+    { title: 'Restore traffic after a crash', prompt: `A major accident just blocked ${a0}. Find the fastest way to restore traffic flow`, icon: Icon.block },
+    hasRail
+      ? { title: 'Metro outage at rush hour', prompt: '¿Qué pasa si el metro se detiene en hora pico? ¿Cómo mitigamos el tráfico?', icon: Icon.train }
+      : { title: 'Stress-test the grid', prompt: '¿Qué pasa si una tormenta tumba la red eléctrica? ¿Cómo nos recuperamos más rápido?', icon: Icon.storm },
+    { title: 'Dispatch an ambulance', prompt: `Send an ambulance to ${a1} and tell me if signal pre-emption is worth it`, icon: Icon.cross },
+    { title: 'Find the bottlenecks', prompt: 'Where is the congestion right now and what would you change?', icon: Icon.target },
+  ]
+}
 
 /** Minimal, safe markdown: **bold**, paragraphs, and bullet / numbered lists. */
 function Rich({ text }: { text: string }) {
@@ -204,7 +211,7 @@ export function CommandCenter() {
                 : llm ? 'Instant on-device planner. Switch to the Gemini agent above for open-ended questions.' : 'The on-device planner maps your request to a fixed tool plan — instant and offline.'}
             </div>
             <div className="starters">
-              {STARTERS.map((s) => (
+              {starters().map((s) => (
                 <button key={s.title} className="starter" onClick={() => send(s.prompt)} disabled={busy}>
                   <span className="starter-icon"><s.icon /></span>
                   <span><b>{s.title}</b><span className="dim">{s.prompt}</span></span>

@@ -8,12 +8,12 @@ import { useUI } from '../store'
 
 const R = 100
 
-export const HUBS: { name: string; lat: number; lon: number; active?: boolean; note?: string }[] = [
-  { name: 'Medellín', lat: 6.25, lon: -75.569, active: true, note: 'Live twin · Centro' },
-  { name: 'Bogotá', lat: 4.711, lon: -74.072, note: 'Queued' },
+export const HUBS: { id?: string; name: string; lat: number; lon: number; active?: boolean; note?: string }[] = [
+  { id: 'medellin', name: 'Medellín', lat: 6.25, lon: -75.569, active: true, note: 'Centro · metro & tram' },
+  { id: 'bogota', name: 'Bogotá', lat: 4.604, lon: -74.075, active: true, note: 'Centro histórico' },
+  { id: 'newyork', name: 'New York', lat: 40.713, lon: -74.006, active: true, note: 'Lower Manhattan · subway' },
   { name: 'Ciudad de México', lat: 19.433, lon: -99.133, note: 'Queued' },
   { name: 'São Paulo', lat: -23.55, lon: -46.633, note: 'Queued' },
-  { name: 'New York', lat: 40.713, lon: -74.006, note: 'Queued' },
   { name: 'Madrid', lat: 40.417, lon: -3.704, note: 'Queued' },
   { name: 'London', lat: 51.507, lon: -0.128, note: 'Queued' },
   { name: 'Lagos', lat: 6.524, lon: 3.379, note: 'Queued' },
@@ -258,7 +258,7 @@ export function GlobeScene() {
     }
     const k = Math.min(1, (clock.elapsedTime - t0.current) / 3.2)
     const e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2
-    const target = latLon(6.25, -75.569, 1).normalize()
+    const target = latLon(runtime.city.lat, runtime.city.lon, 1).normalize()
     const dir = startPos.current.clone().normalize().lerp(target, e).normalize()
     const dist = THREE.MathUtils.lerp(startPos.current.length(), R * 1.04, e)
     camera.position.copy(dir.multiplyScalar(dist))

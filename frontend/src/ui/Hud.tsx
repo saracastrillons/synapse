@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { clock, runtime } from '../runtime'
 import { useUI, type LayerKey, type Panel, type Tool } from '../store'
 import { fmtDuration } from '../sim/engine'
-import { SCENARIOS } from '../sim/scenarios'
+import { scenarioById } from '../sim/scenarios'
 import { Icon, Logo } from './Icons'
 import { useTour } from './Tour'
+import { PERIOD_LABEL, daylight, demandProfile, periodOf } from '../sim/timeofday'
+import { MODES, headwayAt } from '../sim/transit'
 import { LineChart, Legend, Sparkline } from './Charts'
 
 // ───────────────────────────────────────── top bar
@@ -14,7 +16,7 @@ export function TopBar() {
   const scenarioId = useUI((s) => s.scenarioId)
   const seed = useUI((s) => s.params.seed)
   const m = live?.metrics
-  const sc = SCENARIOS.find((s) => s.id === scenarioId)
+  const sc = scenarioById(scenarioId)
   return (
     <div className="topbar glass">
       <div className="brand">
@@ -25,10 +27,11 @@ export function TopBar() {
         </div>
       </div>
       <div>
-        <div className="crumbs">Earth › Colombia › <b>Medellín · Centro</b></div>
+        <div className="crumbs">Earth › {runtime.data.meta.country} › <b>{runtime.data.meta.city} · {runtime.data.meta.area.split(' · ')[0]}</b></div>
         <div className="row" style={{ gap: 8, marginTop: 2 }}>
           <span className={`live-dot ${paused ? 'paused' : ''}`} />
           <span className="clock">{clock(live?.t ?? 0)}</span>
+          {m && <TimeChip hour={m.hour} />}
           <span className="chip violet mono">seed {seed}</span>
           <span className="chip cyan" title={sc?.tagline}>{sc?.name}</span>
         </div>
@@ -39,9 +42,20 @@ export function TopBar() {
         <Kpi label="Trips / h" value={m ? m.throughput.toFixed(0) : '—'} />
         <Kpi label="CO₂" value={m ? (m.co2 / 1000).toFixed(2) : '—'} unit="t/h" />
         <Kpi label="Grid served" value={m ? (m.power * 100).toFixed(0) : '—'} unit="%" warn={!!m && m.power < 0.99} />
+        {runtime.sim.transit.lines.length > 0 && <Kpi label="Rail riders/h" value={m ? (m.riders >= 1000 ? `${(m.riders / 1000).toFixed(1)}k` : m.riders.toFixed(0)) : '—'} warn={!!m && m.riders === 0 && m.hour > 5 && m.hour < 23} />}
         <Kpi label="Agents" value={m ? m.vehicles.toLocaleString() : '—'} />
       </div>
     </div>
+  )
+}
+
+function TimeChip({ hour }: { hour: number }) {
+  const day = daylight(hour) > 0.5
+  const period = periodOf(hour)
+  return (
+    <span className={`chip timechip ${period.includes('peak') ? 'amber' : ''}`} title={`Traffic demand now ${(demandProfile(hour) * 100).toFixed(0)}% of the peak hour`}>
+      {day ? <Icon.sun /> : <Icon.moon />} {PERIOD_LABEL[period]}
+    </span>
   )
 }
 
@@ -291,7 +305,7 @@ export function OverviewPanel() {
     <>
       <div className="side-head">
         <div className="side-title"><Icon.city /> City operations</div>
-        <div className="side-sub">Live state of the Medellín Centro twin · {live.subs.length} substations · {live.units.length} emergency units</div>
+        <div className="side-sub">Live state of the {runtime.city.name} twin · {live.subs.length} substations · {live.units.length} emergency units</div>
       </div>
       <div className="side-body">
         <div className="grid2 section">
@@ -312,6 +326,9 @@ export function OverviewPanel() {
           ]} markers={activeInc.map((i) => ({ t: i.t, color: '#fb4f6b' }))} />
           <Legend items={[{ name: 'delay index', color: '#f472b6' }, { name: 'linear forecast (2-min trend)', color: '#fbbf24', dashed: true }, ...branches.slice(0, -1).map((b) => ({ name: b.name, color: b.color, dashed: true }))]} />
         </div>
+
+        <TimeOfDay />
+        <RailTransit />
 
         <div className="section">
           <div className="section-title">Power grid</div>
@@ -371,6 +388,84 @@ export function OverviewPanel() {
         </div>
       </div>
     </>
+  )
+}
+
+function TimeOfDay() {
+  const params = useUI((s) => s.params)
+  const scenarioId = useUI((s) => s.scenarioId)
+  const hour = useUI((s) => s.live?.metrics.hour ?? 7)
+  const presets: [string, number][] = [['Morning peak', 7.5], ['Midday', 12.5], ['Evening peak', 18], ['Night', 23.5]]
+  const curve = Array.from({ length: 48 }, (_, i) => demandProfile(i / 2))
+  return (
+    <div className="section">
+      <div className="section-title">Time of day <span>demand {(demandProfile(hour) * 100).toFixed(0)}% of peak</span></div>
+      <div className="card" style={{ padding: '10px 12px' }}>
+        <svg viewBox="0 0 240 40" width="100%" height="40" preserveAspectRatio="none">
+          <path d={curve.map((v, i) => `${i ? 'L' : 'M'}${(i / 47) * 240},${38 - v * 34}`).join('')} fill="none" stroke="#22d3ee" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+          <line x1={(hour / 24) * 240} x2={(hour / 24) * 240} y1="0" y2="40" stroke="#fbbf24" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+        </svg>
+        <div className="between dim mono" style={{ fontSize: 9.5 }}><span>00h</span><span>06h</span><span>12h</span><span>18h</span><span>24h</span></div>
+        <div className="row" style={{ gap: 5, marginTop: 8, flexWrap: 'wrap' }}>
+          {presets.map(([label, h]) => (
+            <button key={label} className={`btn small ${Math.abs(params.startHour - h) < 0.01 ? 'active' : ''}`}
+              onClick={() => { runtime.loadScenario(scenarioId, { ...params, startHour: h }); useUI.setState({ paused: false }) }}>{label}</button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RailTransit() {
+  const live = useUI((s) => s.live)
+  const sys = runtime.sim.transit
+  if (!live) return null
+  if (!sys.lines.length && sys.planned.length) {
+    return (
+      <div className="section">
+        <div className="section-title">Rail transit <span>under construction</span></div>
+        {sys.planned.map((l) => (
+          <div className="card" key={l.id}>
+            <div className="between">
+              <span className="row" style={{ gap: 6 }}><span className="line-badge" style={{ background: '#f59e0b' }}>{l.ref.replace('Línea ', 'L')}</span><b style={{ fontSize: 12 }}>{l.name}</b></span>
+              <span className="chip amber">works</span>
+            </div>
+            <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>{l.stations.length} future stations · {(l.len / 1000).toFixed(1)} km in the twin · mapped in OpenStreetMap as under construction, so it carries no trains in the simulation.</div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+  if (!sys.lines.length) return null
+  const held = runtime.sim.state.transitHold != null
+  const level = runtime.sim.state.params.metro
+  const sec = runtime.sim.secOfDay()
+  const trains = sys.trains(runtime.sim.transitSec())
+  return (
+    <div className="section">
+      <div className="section-title">Rail transit <span>{held ? 'suspended' : `${Math.round(level * 100)}% service`}</span></div>
+      {sys.lines.map((l, i) => {
+        const hw = headwayAt(l.mode, sec % 86400, Math.max(level, 0.001))
+        return (
+          <div className="card" key={l.id}>
+            <div className="between">
+              <span className="row" style={{ gap: 6 }}><span className="line-badge" style={{ background: l.colour }}>{l.ref}</span><b style={{ fontSize: 12 }}>{l.name.split(':')[0]}</b></span>
+              <span className={`chip ${held ? 'red' : 'green'}`}>{held ? 'held' : `${trains.filter((t) => t.line === i).length} trains`}</span>
+            </div>
+            <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+              {l.stations.length} stations · {(l.len / 1000).toFixed(1)} km in the twin · {l.mode}{isFinite(hw) && !held ? ` · every ${(hw / 60).toFixed(1)} min` : ''} · {MODES[l.mode].capacity} riders/train
+            </div>
+          </div>
+        )
+      })}
+      <div className="row" style={{ gap: 6, marginTop: 8 }}>
+        {held || level < 1
+          ? <button className="btn small" onClick={() => { runtime.sim.setMetro(1); runtime.publish(true) }}><Icon.train /> Restore full service</button>
+          : <button className="btn small danger" onClick={() => { runtime.sim.setMetro(0); runtime.publish(true) }}><Icon.train /> Suspend rail service</button>}
+        <span className="dim" style={{ fontSize: 11, alignSelf: 'center' }}>{(live.metrics.riders / 1000).toFixed(1)}k riders/h</span>
+      </div>
+    </div>
   )
 }
 
@@ -476,7 +571,7 @@ export function DataPanel() {
           </div>
           <div className="card">
             <div className="between"><span>Demand, loads, incidents</span><span className="chip violet">simulated</span></div>
-            <div className="muted">Synthetic, seeded and reproducible. Not calibrated against real counts — the twin is a laboratory for comparing strategies, not a forecast of Medellín.</div>
+            <div className="muted">Synthetic, seeded and reproducible. Not calibrated against real counts — the twin is a laboratory for comparing strategies, not a forecast of {runtime.city.name}.</div>
           </div>
           <div className="dim" style={{ marginTop: 6 }}>{d.meta.source}. Globe: Natural Earth (public domain).</div>
         </div>

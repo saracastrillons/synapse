@@ -1,6 +1,7 @@
 import { DT, Simulation } from './sim/engine'
 import type { ExperimentResult, ExperimentSpec } from './sim/experiment'
-import { SCENARIOS } from './sim/scenarios'
+import { SCENARIOS, scenarioById, setScenarioCity } from './sim/scenarios'
+import { cityById, type CityConfig } from './sim/cities'
 import type { CityData, ScheduledEvent, SimParams, SimState } from './sim/types'
 import { DEFAULT_PARAMS } from './sim/types'
 import { useUI, type LiveView } from './store'
@@ -20,6 +21,7 @@ const BRANCH_COLORS = ['#22d3ee', '#f472b6', '#fbbf24', '#34d399', '#a78bfa']
  *  Lives outside React; the UI reads a throttled `LiveView` from the store. */
 class Runtime {
   data!: CityData
+  city: CityConfig = cityById('medellin')
   globe!: GlobeData
   sim!: Simulation
   acc = 0
@@ -39,13 +41,14 @@ class Runtime {
   }
 
   private async doLoad(log: (s: string) => void) {
-    log('Linking to OpenStreetMap extract · Medellín Centro')
+    log(`Linking to OpenStreetMap extract · ${this.city.name} ${this.city.area.split(' · ')[0]}`)
     const [data, globe] = await Promise.all([
-      fetchJson(`${import.meta.env.BASE_URL}data/medellin.json`),
+      fetchJson(`${import.meta.env.BASE_URL}data/${this.city.id}.json`),
       fetchJson(`${import.meta.env.BASE_URL}data/globe.json`),
     ])
     this.data = data
     this.globe = globe
+    setScenarioCity(this.city, data)
     log(`Road graph: ${data.roads.nodes.length.toLocaleString()} junctions · ${data.roads.edges.length.toLocaleString()} segments`)
     log(`Built environment: ${data.buildings.length.toLocaleString()} structures · ${data.pois.length} critical facilities`)
     await new Promise((r) => setTimeout(r, 30))
@@ -63,6 +66,26 @@ class Runtime {
     this.worker.postMessage({ type: 'init', data })
     log('Experiment worker ready · deterministic replays enabled')
     this.takeSnapshot()
+    this.publish(true)
+  }
+
+  /** Switch the twin to another city: new dataset, engine, worker data and scenarios. */
+  async loadCity(id: string) {
+    const city = cityById(id)
+    if (city.id === this.city.id && this.data) return
+    const data: CityData = await fetchJson(`${import.meta.env.BASE_URL}data/${city.id}.json`)
+    this.city = city
+    this.data = data
+    setScenarioCity(city, data)
+    const ui = useUI.getState()
+    const params = { ...DEFAULT_PARAMS, seed: ui.params.seed }
+    this.sim = new Simulation(data, params)
+    this.worker?.postMessage({ type: 'init', data })
+    this.snapshots = []
+    this.acc = 0
+    this.branchId = 1
+    this.takeSnapshot()
+    useUI.setState({ cityId: city.id, scenarioId: 'baseline', params, branches: [], selected: null, follow: false, highlight: null, chat: [] })
     this.publish(true)
   }
 
@@ -167,12 +190,12 @@ class Runtime {
 
   // ───────────────────────────── scenario control
   scenarioEvents(id: string): ScheduledEvent[] {
-    const sc = SCENARIOS.find((s) => s.id === id) ?? SCENARIOS[0]
-    return sc.events(this.sim.g, this.sim.state.subs.map((s) => s.name))
+    const sc = scenarioById(id) ?? SCENARIOS[0]
+    return sc.events({ g: this.sim.g, data: this.data, city: this.city, subs: this.sim.state.subs })
   }
 
   scenarioParams(id: string, base: SimParams = DEFAULT_PARAMS): SimParams {
-    const sc = SCENARIOS.find((s) => s.id === id) ?? SCENARIOS[0]
+    const sc = scenarioById(id) ?? SCENARIOS[0]
     return { ...base, ...sc.params }
   }
 
@@ -235,7 +258,8 @@ async function fetchJson(url: string) {
 
 export const runtime = new Runtime()
 
-export function clock(t: number, start = 7 * 3600) {
+/** hh:mm:ss of the simulated clock (the start hour is a simulation parameter) */
+export function clock(t: number, start = (runtime?.sim?.state.params.startHour ?? 7) * 3600) {
   const s = Math.floor(start + t) % 86400
   return `${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
 }

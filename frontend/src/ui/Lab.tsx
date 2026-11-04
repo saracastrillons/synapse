@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { runtime } from '../runtime'
 import { useUI, type LabRun } from '../store'
-import { SCENARIOS } from '../sim/scenarios'
+import { SCENARIOS, scenarioById } from '../sim/scenarios'
 import { DEFAULT_PARAMS, type SimParams } from '../sim/types'
 import { compare, exportCsv, exportJson, fmtKpi, openReport, pushRun, readSharedSetup, runAB, seriesOf, shareLink, verdict } from '../lab'
 import { Icon } from './Icons'
@@ -9,10 +9,14 @@ import { broadcastActivity, saveRun, useCloud } from '../cloud'
 import { CompareToggle } from './Compare'
 import { Legend, LineChart } from './Charts'
 
-type NumKey = 'vehicles' | 'capacity' | 'smartNav' | 'storm' | 'powerDemand' | 'repairCrews' | 'ambulances' | 'incidentRate' | 'seed'
+type NumKey = 'vehicles' | 'capacity' | 'smartNav' | 'storm' | 'powerDemand' | 'repairCrews' | 'ambulances' | 'incidentRate' | 'seed' | 'startHour' | 'metro'
+
+const hhmm = (h: number) => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`
 
 const SLIDERS: { key: NumKey; label: string; min: number; max: number; step: number; fmt: (v: number) => string }[] = [
-  { key: 'vehicles', label: 'Vehicles in network', min: 200, max: 2400, step: 50, fmt: (v) => v.toFixed(0) },
+  { key: 'startHour', label: 'Start time', min: 0, max: 23.5, step: 0.5, fmt: hhmm },
+  { key: 'metro', label: 'Rail service level', min: 0, max: 1, step: 0.25, fmt: (v) => (v === 0 ? 'suspended' : `${(v * 100).toFixed(0)}%`) },
+  { key: 'vehicles', label: 'Vehicles at peak hour', min: 200, max: 2400, step: 50, fmt: (v) => v.toFixed(0) },
   { key: 'capacity', label: 'Road capacity (lanes ×)', min: 0.5, max: 1.5, step: 0.05, fmt: (v) => `${(v * 100).toFixed(0)}%` },
   { key: 'smartNav', label: 'Connected navigation', min: 0, max: 1, step: 0.05, fmt: (v) => `${(v * 100).toFixed(0)}%` },
   { key: 'storm', label: 'Storm intensity', min: 0, max: 1, step: 0.05, fmt: (v) => `${(v * 100).toFixed(0)}%` },
@@ -37,6 +41,13 @@ export function ParamEditor({ value, onChange, base }: { value: SimParams; onCha
         </div>
       ))}
       <div className="param">
+        <div className="param-head"><span style={changed('dynamicDemand') ? { color: 'var(--magenta)' } : undefined}>Traffic demand</span></div>
+        <div className="seg">
+          <button className={value.dynamicDemand ? 'on' : ''} onClick={() => onChange({ ...value, dynamicDemand: true })}>Follows time of day</button>
+          <button className={!value.dynamicDemand ? 'on' : ''} onClick={() => onChange({ ...value, dynamicDemand: false })}>Constant</button>
+        </div>
+      </div>
+      <div className="param">
         <div className="param-head"><span style={changed('signals') ? { color: 'var(--magenta)' } : undefined}>Signal control</span></div>
         <div className="seg">
           <button className={value.signals === 'fixed' ? 'on' : ''} onClick={() => onChange({ ...value, signals: 'fixed' })}>Fixed-time 30 s</button>
@@ -59,7 +70,7 @@ export function LabPanel() {
   const live = useUI((s) => s.params)
   const lab = useUI((s) => s.lab)
   const [sel, setSel] = useState(scenarioId)
-  const preset = SCENARIOS.find((s) => s.id === sel)!
+  const preset = scenarioById(sel)!
   const [a, setA] = useState<SimParams>(() => ({ ...live }))
   const [b, setB] = useState<SimParams>(() => ({ ...live, ...preset.intervention?.params }))
   const [labelB, setLabelB] = useState(preset.intervention?.label ?? 'Intervention')
@@ -84,7 +95,7 @@ export function LabPanel() {
   }, [])
 
   const choose = (id: string) => {
-    const p = SCENARIOS.find((s) => s.id === id)!
+    const p = scenarioById(id)!
     const pa = { ...DEFAULT_PARAMS, seed: a.seed, ...p.params }
     setSel(id)
     setA(pa)
@@ -185,7 +196,7 @@ export function LabPanel() {
               return (
                 <div key={r.id} className="alert-row" style={{ gridTemplateColumns: '56px 1fr auto', alignItems: 'center' }} onClick={() => useUI.setState({ lab: { ...lab, runs: [...lab.runs.filter((x) => x.id !== r.id), r] } })}>
                   <span className="mono dim">{new Date(r.createdAt).toLocaleTimeString().slice(0, 5)}</span>
-                  <span>{SCENARIOS.find((s) => s.id === r.scenario)?.name} · <b className={v.winner === 'B' ? 'up' : v.winner === 'A' ? 'down' : ''}>{r.labelB}</b></span>
+                  <span>{scenarioById(r.scenario)?.name} · <b className={v.winner === 'B' ? 'up' : v.winner === 'A' ? 'down' : ''}>{r.labelB}</b></span>
                   <CompareToggle run={r} />
                 </div>
               )
@@ -203,7 +214,7 @@ function Results({ run, metric, setMetric, onShare, copied, onApply }: {
 }) {
   const rows = compare(run)
   const v = verdict(run)
-  const sc = SCENARIOS.find((s) => s.id === run.scenario)
+  const sc = scenarioById(run.scenario)
   const events = runtime.scenarioEvents(run.scenario)
   return (
     <div className="section">

@@ -1,4 +1,5 @@
 import { clock, runtime } from '../runtime'
+import { toLocal } from '../sim/cities'
 import { fmtDuration } from '../sim/engine'
 import type { ExperimentResult, ExperimentSpec } from '../sim/experiment'
 import type { ScheduledEvent, SimParams } from '../sim/types'
@@ -189,13 +190,20 @@ function detourNote(ctx: Ctx, astar: number, dijkstra: number) {
     : ctx.L('A* and Dijkstra agree on the optimal detour.', 'A* y Dijkstra coinciden en el desvío óptimo.')
 }
 
+/** edge of the city's i-th main arterial (from the city config) */
+export function mainArterial(i: number) {
+  const a = runtime.city.arterials[i] ?? runtime.city.arterials[0]
+  const near = a.lat != null && a.lon != null ? toLocal(runtime.data, a.lat, a.lon) : undefined
+  return runtime.sim.g.findEdgeByName(a.name, near)
+}
+
 // ───────────────────────────── plans
 async function planAccident(ctx: Ctx, text: string) {
   const sim = runtime.sim
   let inc = activeBlock()
   const named = findStreet(text)
   if (!inc || (named >= 0 && sim.g.edges[named].name !== sim.g.edges[inc.edge].name)) {
-    const edge = named >= 0 ? named : sim.g.findEdgeByName('Avenida Oriental', [450, -150])
+    const edge = named >= 0 ? named : mainArterial(0)
     inc = await tool(ctx, 'block_road', { street: sim.edgeName(edge) }, () => sim.createIncident('accident', edge, `Major accident on ${sim.edgeName(edge)}`, 900)!, (r) => `incident #${r.id} at ${clock(r.t)}, lane blocked`) ?? undefined
   } else {
     await tool(ctx, 'list_incidents', { status: 'active' }, () => inc!, (r) => `#${r.id} ${r.label} · ${r.status}`)
@@ -235,7 +243,7 @@ async function planAmbulance(ctx: Ctx, text: string) {
   const sim = runtime.sim
   const named = findStreet(text)
   const spots = hotspots(1)
-  const edge = named >= 0 ? named : spots[0]?.edges[0] ?? sim.g.findEdgeByName('Carrera 54')
+  const edge = named >= 0 ? named : spots[0]?.edges[0] ?? mainArterial(1)
   const etas = await tool(ctx, 'evaluate_dispatch', { location: sim.edgeName(edge) }, () => sim.unitEtas(edge),
     (r) => r.slice(0, 4).map((x) => `${x.unit.name.split('·')[1]?.trim()}: ${fmtDuration(x.eta)}${x.unit.status === 'busy' ? ' (busy)' : ''}`).join('\n'))
   const best = etas.find((x) => x.unit.status === 'idle') ?? etas[0]
@@ -270,6 +278,30 @@ async function planAmbulance(ctx: Ctx, text: string) {
     },
     actions: [{ label: ctx.L(`Apply "${ranked[0].label}" live`, `Aplicar "${ranked[0].label}" en vivo`), run: () => runtime.applyParams(ranked[0].patch) }],
   })
+}
+
+async function planMetro(ctx: Ctx) {
+  const sim = runtime.sim
+  const sys = sim.transit
+  const status = await tool(ctx, 'transit_status', {}, () => ({
+    lines: sys.lines.map((l) => l.ref), trains: sys.trains(sim.transitSec()).length, riders: Math.round(sim.state.metrics.riders),
+  }), (r) => `${r.lines.length} lines (${r.lines.join(', ')}) · ${r.trains} trains in service · ${r.riders.toLocaleString()} riders/h`)
+  const base = { ...sim.state.params, startHour: Math.min(Math.max(sim.hour(), 6.5), 8.5), incidentRate: 0 }
+  const events: ScheduledEvent[] = [{ t: 60, type: 'metro', level: 0, label: 'Rail service suspended' }]
+  const strategies = [
+    { label: ctx.L('Rail suspended, no response', 'Metro suspendido, sin respuesta'), patch: {} },
+    { label: ctx.L('Bus bridge lanes (+15% capacity)', 'Carriles para buses puente (+15% capacidad)'), patch: { capacity: Math.min(1.5, base.capacity * 1.15) } },
+    { label: ctx.L('Broadcast to 80% of drivers', 'Aviso al 80% de conductores'), patch: { smartNav: 0.8 } },
+    { label: ctx.L('Bus bridge + broadcast', 'Buses puente + aviso'), patch: { capacity: Math.min(1.5, base.capacity * 1.15), smartNav: 0.8 } },
+  ]
+  const results = await experiments(ctx, base, events, strategies, 420, 2)
+  const ranked = rank(results, strategies, (m) => m.congestion * 100 + m.trip / 30 + m.removed * 0.5)
+  const baseR = ranked.find((r) => r.label === strategies[0].label)!
+  say(ctx, ctx.L(
+    `Right now ${status.trains} trains carry about **${status.riders.toLocaleString()} riders/h**. If rail service stops at rush hour, roughly 18% of those trips move to the roads. I simulated the outage with four responses on identical seeds:\n\n${tableOf(ranked, ctx)}`,
+    `Ahora ${status.trains} trenes llevan unos **${status.riders.toLocaleString()} pasajeros/h**. Si el metro se detiene en hora pico, cerca del 18% de esos viajes pasa a las vías. Simulé el corte con cuatro respuestas y las mismas semillas:\n\n${tableOf(ranked, ctx)}`),
+  { xai: xai(ctx, ctx.L('Rail outage response', 'Respuesta a un corte del metro'), ranked[0], baseR, 2),
+    actions: [{ label: ctx.L(`Apply "${ranked[0].label}" live`, `Aplicar "${ranked[0].label}" en vivo`), run: () => runtime.applyParams(ranked[0].patch) }] })
 }
 
 async function planGrid(ctx: Ctx) {
@@ -375,8 +407,8 @@ async function planStatus(ctx: Ctx) {
 
 function help(ctx: Ctx) {
   say(ctx, ctx.L(
-    `I can operate the twin with these tools: **block_road, compute_detour, evaluate_dispatch, create_emergency, find_hotspots, forecast_congestion, grid_status, compare_algorithms, run_experiments**. Try:\n• "A major accident just blocked Avenida Oriental. Find the fastest way to restore traffic flow"\n• "Send an ambulance to Carrera 54"\n• "Where is the congestion right now?"\n• "Compare fixed vs adaptive signals"\n• "What if a storm knocks out the grid?"\n• "What happens if traffic grows 40%?"\n• "A* vs Dijkstra"`,
-    `Puedo operar el gemelo con estas herramientas: **block_road, compute_detour, evaluate_dispatch, create_emergency, find_hotspots, forecast_congestion, grid_status, compare_algorithms, run_experiments**. Prueba:\n• "Un accidente bloqueó la Avenida Oriental. ¿Cómo restablezco el flujo?"\n• "Envía una ambulancia a la Carrera 54"\n• "¿Dónde está la congestión ahora?"\n• "Compara semáforos fijos vs adaptativos"\n• "¿Qué pasa si una tormenta tumba la red eléctrica?"\n• "¿Qué pasa si el tráfico aumenta 40%?"\n• "A* vs Dijkstra"`))
+    `I can operate the twin with these tools: **block_road, compute_detour, evaluate_dispatch, create_emergency, find_hotspots, forecast_congestion, grid_status, compare_algorithms, run_experiments**. Try:\n• "A major accident just blocked ${runtime.city.arterials[0].name}. Find the fastest way to restore traffic flow"\n• "Send an ambulance to ${runtime.city.arterials[1].name}"\n• "What if the metro stops at rush hour?"\n• "Where is the congestion right now?"\n• "Compare fixed vs adaptive signals"\n• "What if a storm knocks out the grid?"\n• "What happens if traffic grows 40%?"\n• "A* vs Dijkstra"`,
+    `Puedo operar el gemelo con estas herramientas: **block_road, compute_detour, evaluate_dispatch, create_emergency, find_hotspots, forecast_congestion, grid_status, compare_algorithms, run_experiments**. Prueba:\n• "Un accidente bloqueó ${runtime.city.arterials[0].name}. ¿Cómo restablezco el flujo?"\n• "Envía una ambulancia a ${runtime.city.arterials[1].name}"\n• "¿Qué pasa si el metro se detiene en hora pico?"\n• "¿Dónde está la congestión ahora?"\n• "Compara semáforos fijos vs adaptativos"\n• "¿Qué pasa si una tormenta tumba la red eléctrica?"\n• "¿Qué pasa si el tráfico aumenta 40%?"\n• "A* vs Dijkstra"`))
 }
 
 /** Deterministic keyword planner — the offline fallback for the LLM agent. */
@@ -390,6 +422,7 @@ export async function askLocal(text: string) {
   try {
     if (/accident|block|closure|restore|accidente|bloque|cierre|choque|restablec|flujo/.test(t)) await planAccident(ctx, text)
     else if (/ambulan|emergenc|hospital|paciente|patient|cardiac|infarto/.test(t)) await planAmbulance(ctx, text)
+    else if (/metro|subway|train|tren|tranvia|tram|rail/.test(t) && runtime.sim.transit.lines.length) await planMetro(ctx)
     else if (/storm|blackout|grid|power|energ|tormenta|apagon|electric|subesta/.test(t)) await planGrid(ctx)
     else if (/signal|semaforo|adaptive|adaptativ|max.?pressure/.test(t)) await planSignals(ctx)
     else if (/a\*|astar|a star|dijkstra|algorit/.test(t)) await planAlgorithms(ctx)

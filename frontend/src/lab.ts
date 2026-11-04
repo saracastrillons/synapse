@@ -1,6 +1,6 @@
 import { runtime } from './runtime'
 import { KPI_META, type ExperimentResult, type ExperimentSummary } from './sim/experiment'
-import { SCENARIOS } from './sim/scenarios'
+import { scenarioById } from './sim/scenarios'
 import type { SimParams } from './sim/types'
 import { useUI, type LabRun } from './store'
 
@@ -41,7 +41,7 @@ export async function runAB(opts: {
   }
   const results = await runtime.runExperiments(specs, opts.onProgress)
   const run: LabRun = {
-    id: Date.now(), scenario: opts.scenarioId, labelA: opts.labelA, labelB: opts.labelB, duration: opts.duration, createdAt: Date.now(),
+    id: Date.now(), scenario: opts.scenarioId, city: runtime.city.id, labelA: opts.labelA, labelB: opts.labelB, duration: opts.duration, createdAt: Date.now(),
     a: results.filter((_, i) => i % 2 === 0), b: results.filter((_, i) => i % 2 === 1),
   }
   return run
@@ -167,7 +167,7 @@ export function exportJson(run: LabRun) {
 
 /** Printable executive report generated from the experiment data. */
 export function openReport(run: LabRun) {
-  const sc = SCENARIOS.find((s) => s.id === run.scenario)
+  const sc = scenarioById(run.scenario)
   const rows = compare(run)
   const v = verdict(run)
   const p = run.a[0].params

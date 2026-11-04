@@ -73,6 +73,7 @@ export const buildingFrag = /* glsl */ `
   uniform float uFogNear;
   uniform float uFogFar;
   uniform float uStorm;
+  uniform float uDay;
   varying vec2 vWall;
   varying float vH;
   varying float vSector;
@@ -89,7 +90,7 @@ export const buildingFrag = /* glsl */ `
     vec3 light = normalize(vec3(0.4, 0.8, 0.3));
     float diff = 0.35 + 0.65 * max(0.0, dot(normalize(vN), light));
     float hk = clamp(vH / 70.0, 0.0, 1.0);
-    vec3 base = mix(vec3(0.035, 0.05, 0.10), vec3(0.07, 0.10, 0.19), hk) * diff;
+    vec3 base = mix(vec3(0.035, 0.05, 0.10), vec3(0.07, 0.10, 0.19), hk) * diff * (1.0 + 1.3 * uDay);
     vec3 col = base;
     if (vRoof > 0.5) {
       col = vec3(0.045, 0.065, 0.12);
@@ -102,7 +103,8 @@ export const buildingFrag = /* glsl */ `
       vec2 f = vec2(fract(vWall.x / 3.2), fract(vWall.y / 3.3));
       float win = step(0.18, f.x) * step(f.x, 0.82) * step(0.28, f.y) * step(f.y, 0.78);
       float r = hash(cell + vSeed * 17.0);
-      float lit = step(0.5, r) * step(1.0, vWall.y) * step(vWall.y, vH - 0.8);
+      // fewer windows are lit in daylight
+      float lit = step(0.5 + 0.38 * uDay, r) * step(1.0, vWall.y) * step(vWall.y, vH - 0.8);
       float flick = 0.85 + 0.15 * sin(uTime * (0.5 + r * 3.0) + r * 40.0);
       vec3 wc = mix(vec3(1.0, 0.72, 0.38), vec3(0.45, 0.85, 1.0), step(0.78, r));
       col += wc * win * lit * flick * 0.85 * powered;

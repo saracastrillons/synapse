@@ -55,8 +55,9 @@ def _strip_signatures(contents: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [{**c, "parts": [{k: v for k, v in p.items() if k != "thoughtSignature"} for p in c.get("parts", [])]} for c in contents]
 
 
-SYSTEM = """You are SYNAPSE Copilot, the operations agent of SYNAPSE — a live, agent-based digital twin of
-Medellín Centro (Colombia) built on real OpenStreetMap roads, hospitals, fire stations and substations.
+SYSTEM = """You are SYNAPSE Copilot, the operations agent of SYNAPSE — a live, agent-based digital twin of a city
+downtown (the current city, clock and situation are given in a [context: …] line) built on real OpenStreetMap roads,
+rail lines, hospitals, fire stations and substations.
 Traffic demand, electrical loads and incidents are synthetic and seeded; never present them as real-world data.
 
 How you work:
@@ -72,7 +73,11 @@ How you work:
   Lead with the conclusion, then the evidence (numbers with units, seeds, minutes simulated), then caveats.
   Use **bold** for the key figure. No tables, no headings.
 
-Parameter meanings: vehicles (200–2400 agents), capacity (0.5–1.5 lane multiplier), smartNav (0–1 share of
+Traffic follows the time of day (peaks around 07:30 and 18:00, very low at night); `vehicles` is the peak-hour
+count. Rail lines (metro/tram) run on a timetable; suspending them moves ~18% of their riders onto the roads.
+
+Parameter meanings: startHour (0–23.5, clock at the start of an experiment), dynamicDemand (true = demand follows
+the time of day), metro (rail service level 0–1, 0 = suspended), vehicles (200–2400 agents at peak), capacity (0.5–1.5 lane multiplier), smartNav (0–1 share of
 drivers with live navigation), signals ('fixed' 30 s or 'adaptive' max-pressure), preemption (emergency green
 wave), storm (0–1), powerDemand (0.6–1.6), repairCrews (1–4), ambulances (1–3 per hospital),
 incidentRate (random emergencies per hour)."""
@@ -90,6 +95,9 @@ PARAMS_SCHEMA = {
         "repairCrews": {"type": "integer", "description": "Grid repair crews (1–4)"},
         "ambulances": {"type": "integer", "description": "Ambulances per hospital (1–3)"},
         "incidentRate": {"type": "number", "description": "Random emergencies per hour (0–20)"},
+        "startHour": {"type": "number", "description": "Clock at the start of the run, hours (0–23.5)"},
+        "dynamicDemand": {"type": "boolean", "description": "Demand follows the time of day"},
+        "metro": {"type": "number", "description": "Rail service level (0 suspended – 1 normal)"},
     },
 }
 
@@ -129,6 +137,10 @@ TOOLS: list[dict[str, Any]] = [
      }, "required": ["strategies", "objective"]}},
     {"name": "propose_parameters", "description": "Propose a policy change to apply to the live twin. The user confirms it in the UI.",
      "parameters": {"type": "object", "properties": {"label": {"type": "string"}, "params": PARAMS_SCHEMA}, "required": ["label", "params"]}},
+    {"name": "transit_status", "description": "Rail lines of the current city: stations, trains in service, headway, riders per hour, service level.",
+     "parameters": {"type": "object", "properties": {}}},
+    {"name": "set_rail_service", "description": "Change the live rail service level (0 = suspend all lines, 0.5 = half the trains, 1 = normal).",
+     "parameters": {"type": "object", "properties": {"level": {"type": "number"}}, "required": ["level"]}},
     {"name": "focus_map", "description": "Move the camera to a street.",
      "parameters": {"type": "object", "properties": {"street": {"type": "string"}}, "required": ["street"]}},
 ]

@@ -67,3 +67,28 @@ test.describe('phone', () => {
     await shot(page, '07-mobile')
   })
 })
+
+test('rail, night and other cities', async ({ page }) => {
+  await enterCity(page)
+  await page.waitForTimeout(4000)
+  await page.locator('.rail-btn', { hasText: 'City operations' }).click()
+  await page.evaluate(() => (window as unknown as { __focus: (x: number, z: number, d: number) => void }).__focus(-60, 330, 300))
+  await page.waitForTimeout(25_000)
+  await shot(page, '08-metro-medellin')
+  await page.locator('.rail-btn', { hasText: 'City operations' }).click()
+  await page.getByRole('button', { name: 'Night' }).click()
+  await page.locator('.rail-btn', { hasText: 'City operations' }).click()
+  await page.evaluate(() => (window as unknown as { __focus: (x: number, z: number, d: number) => void }).__focus(0, 0, 1300))
+  await page.waitForTimeout(30_000)
+  await shot(page, '09-night')
+})
+
+test('new york', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('synapse.tour.done', '1'))
+  await page.goto('/')
+  await page.locator('.city-item', { hasText: 'New York' }).click()
+  await expect(page.locator('.topbar')).toBeVisible({ timeout: 90_000 })
+  await page.locator('.rail-btn', { hasText: 'City operations' }).click()
+  await page.waitForTimeout(15_000)
+  await shot(page, '10-new-york')
+})

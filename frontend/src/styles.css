@@ -294,6 +294,10 @@ input[type='range']::-moz-range-thumb { width: 14px; height: 14px; border-radius
 .tour-dots span.on { width: 18px; border-radius: 3px; background: var(--cyan); }
 @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
 
+.line-badge { display: inline-grid; place-items: center; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 4px; color: #02060f; font-weight: 700; font-size: 9.5px; margin-right: 2px; }
+.label3d.station { border-color: rgba(255, 255, 255, 0.25); }
+.timechip { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+
 /* ───────── globe overlay */
 .globe-hero { position: absolute; left: 96px; top: 50%; transform: translateY(-50%); max-width: 470px; pointer-events: none; }
 .globe-hero h1 { font-size: 64px; letter-spacing: 0.18em; margin: 0; font-weight: 700; background: linear-gradient(120deg, #fff 20%, var(--cyan) 60%, var(--violet)); -webkit-background-clip: text; background-clip: text; color: transparent; }
@@ -305,6 +309,7 @@ input[type='range']::-moz-range-thumb { width: 14px; height: 14px; border-radius
 .city-item.on { border-color: rgba(34, 211, 238, 0.4); background: rgba(34, 211, 238, 0.06); cursor: pointer; }
 .city-item.on:hover { box-shadow: var(--glow); }
 .city-item.off { opacity: 0.5; }
+.city-item.selected { border-color: rgba(34, 211, 238, 0.75); background: rgba(34, 211, 238, 0.12); }
 
 .veil { position: absolute; inset: 0; pointer-events: none; display: grid; place-items: center; transition: opacity 0.9s; background: radial-gradient(circle at center, rgba(3, 5, 11, 0.4), rgba(3, 5, 11, 0.95)); }
 .veil-text { font-family: var(--mono); letter-spacing: 0.3em; font-size: 12px; color: var(--cyan); text-transform: uppercase; text-align: center; line-height: 2; }

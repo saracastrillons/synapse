@@ -17,6 +17,25 @@ export function CityLabels() {
   const live = useUI((s) => s.live)
   if (!show || !live) return null
   const pois = runtime.data.pois.filter((p) => p.kind !== 'police')
+  const sys = runtime.sim.transit
+  const stations: { name: string; x: number; y: number; z: number; lines: { ref: string; colour: string }[]; planned?: boolean }[] = []
+  sys.lines.forEach((l, li) => l.stations.forEach((st) => {
+    const [x, e, z] = sys.posAt(li, st.s)
+    const near = stations.find((o) => Math.hypot(o.x - x, o.z - z) < 140)
+    if (near) {
+      if (!near.lines.some((r) => r.ref === l.ref)) near.lines.push({ ref: l.ref, colour: l.colour })
+    } else stations.push({ name: st.name, x, y: (e > 0.01 ? 2 + e * 9.5 : 0.3) + 16, z, lines: [{ ref: l.ref, colour: l.colour }] })
+  }))
+  for (const l of sys.planned) {
+    const cum = [0]
+    for (let i = 1; i < l.pts.length; i++) cum.push(cum[i - 1] + Math.hypot(l.pts[i][0] - l.pts[i - 1][0], l.pts[i][1] - l.pts[i - 1][1]))
+    for (const st of l.stations) {
+      const i = Math.max(0, cum.findIndex((c) => c >= st.s) - 1)
+      const p = l.pts[i]
+      stations.push({ name: st.name, x: p[0], y: (p[2] > 0 ? 11.5 : 0.3) + 16, z: p[1], lines: [{ ref: l.ref, colour: '#f59e0b' }], planned: true } as (typeof stations)[number])
+    }
+  }
+  const railDown = live.metrics && runtime.sim.state.transitHold != null
   const incidents = live.incidents.filter((i) => i.status !== 'resolved')
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
@@ -32,6 +51,13 @@ export function CityLabels() {
           </div>
         )
       })}
+      {stations.map((st) => (
+        <div key={`s${st.name}`} className="label3d station" data-anchor="" data-x={st.x} data-y={st.y} data-z={st.z}
+          style={{ position: 'absolute', left: 0, top: 0, opacity: 0 }}>
+          {st.lines.map((l) => <span key={l.ref} className="line-badge" style={{ background: l.colour }}>{l.ref}</span>)} {st.name}
+          <small>{st.planned ? 'under construction · not in service' : railDown ? 'service suspended' : 'station'}</small>
+        </div>
+      ))}
       {incidents.map((inc) => {
         const color = inc.kind === 'accident' ? '#ff1f4b' : inc.kind === 'fire' ? '#ff7a1a' : '#f472b6'
         return (

@@ -49,6 +49,9 @@ class SimParams(BaseModel):
     repairCrews: int = Field(ge=1, le=10)
     ambulances: int = Field(ge=0, le=10)
     incidentRate: float = Field(ge=0, le=120)
+    startHour: float = Field(default=7, ge=0, lt=24)
+    dynamicDemand: bool = True
+    metro: float = Field(default=1, ge=0, le=1)
 
 
 # ───────────── projects

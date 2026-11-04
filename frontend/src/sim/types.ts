@@ -1,7 +1,22 @@
 export type RoadClass = 'arterial' | 'collector' | 'local'
 
+export interface TransitLineData {
+  id: string
+  ref: string
+  name: string
+  mode: 'metro' | 'rail' | 'tram'
+  colour: string
+  /** [x, z, elevation] — elevation: -1 tunnel, 0 at grade, 1 viaduct */
+  pts: [number, number, number][]
+  len: number
+  stations: { name: string; s: number }[]
+  /** 'construction': mapped but not in service yet (rendered as works, no trains) */
+  status?: 'open' | 'construction'
+}
+
 export interface CityData {
   meta: {
+    id?: string
     city: string
     area: string
     country: string
@@ -26,6 +41,7 @@ export interface CityData {
   }
   buildings: { p: [number, number][]; h: number; est: boolean | 'proc' }[]
   pois: { kind: 'hospital' | 'fire' | 'police' | 'substation'; name: string; x: number; z: number }[]
+  transit?: { lines: TransitLineData[] }
 }
 
 export type SignalStrategy = 'fixed' | 'adaptive'
@@ -51,6 +67,12 @@ export interface SimParams {
   ambulances: number
   /** random emergencies per simulated hour */
   incidentRate: number
+  /** clock time when the simulation starts (hours, 0–24) */
+  startHour: number
+  /** traffic follows the daily demand curve; `vehicles` is then the peak-hour count */
+  dynamicDemand: boolean
+  /** rail transit service level: 1 normal, 0.5 half the trains, 0 suspended */
+  metro: number
 }
 
 export const DEFAULT_PARAMS: SimParams = {
@@ -65,6 +87,9 @@ export const DEFAULT_PARAMS: SimParams = {
   repairCrews: 2,
   ambulances: 1,
   incidentRate: 4,
+  startHour: 7,
+  dynamicDemand: true,
+  metro: 1,
 }
 
 export type VehicleKind = 'car' | 'bus' | 'taxi' | 'ambulance' | 'fire'
@@ -189,6 +214,8 @@ export interface Sample {
   trip: number
   vehicles: number
   stopped: number
+  /** rail transit riders per hour */
+  riders: number
 }
 
 export interface Metrics extends Sample {
@@ -196,6 +223,10 @@ export interface Metrics extends Sample {
   removed: number
   activeIncidents: number
   outages: number
+  /** vehicles the demand model wants on the road right now */
+  demandTarget: number
+  hour: number
+  trainsInService: number
 }
 
 export type ScheduledEvent =
@@ -204,6 +235,7 @@ export type ScheduledEvent =
   | { t: number; type: 'trip'; sub: number; duration: number }
   | { t: number; type: 'medical'; node: number; label?: string }
   | { t: number; type: 'demand'; vehicles: number }
+  | { t: number; type: 'metro'; level: number; label?: string }
 
 export interface SimState {
   t: number
@@ -231,5 +263,7 @@ export interface SimState {
   nextAlertId: number
   removed: number
   arrivals: number
+  /** second-of-day at which rail service was suspended (trains hold position), or null */
+  transitHold: number | null
   acc: { second: number; sample: number; spawnBudget: number }
 }

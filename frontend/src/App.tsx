@@ -40,7 +40,19 @@ function Boot({ done }: { done: boolean }) {
 }
 
 function GlobeOverlay() {
-  const enter = () => useUI.setState({ mode: 'descending' })
+  const cityId = useUI((s) => s.cityId)
+  const [loading, setLoading] = useState<string | null>(null)
+  const go = async (id: string, tour = false) => {
+    setLoading(id)
+    try {
+      await runtime.loadCity(id)
+    } finally {
+      setLoading(null)
+    }
+    if (tour) useTour.setState({ queued: true })
+    useUI.setState({ mode: 'descending' })
+  }
+  const current = HUBS.find((h) => h.id === cityId) ?? HUBS[0]
   return (
     <>
       <div className="globe-hero">
@@ -48,19 +60,20 @@ function GlobeOverlay() {
         <h1>SYNAPSE</h1>
         <p>An interactive laboratory where cities become experiments. Agent-based traffic, emergency response and power-grid simulation on real OpenStreetMap data — with an AI that tests its own recommendations before it makes them.</p>
         <div className="cta">
-          <button className="btn primary" style={{ padding: '11px 18px', fontSize: 13 }} onClick={enter}>Descend into Medellín →</button>
-          <button className="btn" style={{ padding: '11px 14px' }} onClick={() => { useTour.setState({ queued: true }); enter() }}>Take the 60-second tour</button>
+          <button className="btn primary" style={{ padding: '11px 18px', fontSize: 13 }} onClick={() => go(cityId)}>Descend into {current.name} →</button>
+          <button className="btn" style={{ padding: '11px 14px' }} onClick={() => go(cityId, true)}>Take the 60-second tour</button>
         </div>
       </div>
       <div className="city-list glass">
         <div className="section-title">Twins on the network</div>
         {HUBS.map((h) => (
-          <div key={h.name} className={`city-item ${h.active ? 'on' : 'off'}`} onClick={h.active ? enter : undefined}>
+          <div key={h.name} className={`city-item ${h.active ? 'on' : 'off'} ${h.id === cityId ? 'selected' : ''}`} role={h.active ? 'button' : undefined}
+            onClick={h.active && h.id && !loading ? () => go(h.id!) : undefined}>
             <div>
               <div style={{ fontWeight: 600 }}>{h.name}</div>
-              <div className="dim mono" style={{ fontSize: 10 }}>{h.lat.toFixed(2)}°, {h.lon.toFixed(2)}°</div>
+              <div className="dim" style={{ fontSize: 10.5 }}>{h.active ? h.note : `${h.lat.toFixed(2)}°, ${h.lon.toFixed(2)}°`}</div>
             </div>
-            {h.active ? <span className="chip green">● live</span> : <span className="chip">{h.note}</span>}
+            {h.active ? <span className="chip green">{loading === h.id ? 'loading…' : '● live'}</span> : <span className="chip">{h.note}</span>}
           </div>
         ))}
       </div>
@@ -149,6 +162,7 @@ export default function App() {
   }, [])
 
   const inCity = mode === 'city'
+  const cityId = useUI((s) => s.cityId)
 
   // first visit (or "Take the tour" on the globe): start the guided tour once the camera has landed
   useEffect(() => {
@@ -164,7 +178,7 @@ export default function App() {
         {loaded && (
           <Canvas camera={{ fov: 45, near: 1, far: 20000, position: [0, 0, 400] }} dpr={[1, 1.75]} gl={{ antialias: true, powerPreference: 'high-performance' }}>
             <Suspense fallback={null}>
-              {inCity ? <CityScene /> : <GlobeScene />}
+              {inCity ? <CityScene key={cityId} /> : <GlobeScene />}
               <EffectComposer multisampling={0}>
                 <Bloom intensity={inCity ? 0.9 : 1.2} luminanceThreshold={inCity ? 0.62 : 0.2} luminanceSmoothing={0.2} mipmapBlur />
                 <Vignette offset={0.25} darkness={0.75} />

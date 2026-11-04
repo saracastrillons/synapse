@@ -1,6 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { create } from 'zustand'
 import { ask } from '../ai/agent'
+import { mainArterial } from '../ai/copilot'
 import { clock, runtime } from '../runtime'
 import { useUI } from '../store'
 import { Icon } from './Icons'
@@ -60,7 +61,8 @@ interface Step {
   action?: { label: string; done: string; run: () => void }
 }
 
-const ACCIDENT_PROMPT = 'A major accident just blocked Avenida Oriental. Find the fastest way to restore traffic flow'
+const mainRoad = () => runtime.city.arterials[0].name
+const accidentPrompt = () => `A major accident just blocked ${mainRoad()}. Find the fastest way to restore traffic flow`
 
 function pickAgent() {
   const vs = runtime.sim.state.vehicles.filter((v) => v.edge >= 0 && !v.mission && v.kind === 'car')
@@ -69,20 +71,20 @@ function pickAgent() {
   runtime.publish(true)
 }
 
-function blockOriental() {
+function blockMainRoad() {
   const sim = runtime.sim
-  const edge = sim.g.findEdgeByName('Avenida Oriental', [450, -150])
+  const edge = mainArterial(0)
   useUI.setState({ selected: null, follow: false, panel: useUI.getState().panel === 'ai' ? 'ai' : null })
   const existing = sim.state.incidents.find((i) => i.edge === edge && i.status !== 'resolved')
-  const inc = existing ?? sim.createIncident('accident', edge, 'Major accident on Avenida Oriental', 900)
+  const inc = existing ?? sim.createIncident('accident', edge, `Major accident on ${mainRoad()}`, 900)
   if (inc) useUI.getState().focusOn(inc.x, inc.z, 1000)
   runtime.publish(true)
 }
 
-const STEPS: Step[] = [
+const buildSteps = (): Step[] => [
   {
     title: 'Welcome to SYNAPSE',
-    body: <>You are looking at a <b>live digital twin of Medellín Centro</b>, built on real OpenStreetMap streets, hospitals and substations. In one minute you will break the city, ask an AI how to fix it and rewind time.</>,
+    body: <>You are looking at a <b>live digital twin of {runtime.city.name} · {runtime.city.area.split(' · ')[0]}</b>, built on real OpenStreetMap streets, {runtime.sim.transit.lines.length ? 'rail lines, ' : ''}hospitals and substations. In one minute you will break the city, ask an AI how to fix it and rewind time.</>,
   },
   {
     title: 'A city that is alive',
@@ -99,8 +101,8 @@ const STEPS: Step[] = [
   {
     title: 'Now, break something',
     target: query('.tools', '.toasts'),
-    body: <>Avenida Oriental is downtown's main north–south artery. Block it and watch the dispatcher send the <b>closest ambulance by travel time</b> while connected drivers reroute.</>,
-    action: { label: 'Block Avenida Oriental', done: 'Accident created — an ambulance is on its way', run: blockOriental },
+    body: <>{mainRoad()} is one of downtown's main arteries. Block it and watch the dispatcher send the <b>closest ambulance by travel time</b> while connected drivers reroute.</>,
+    action: { label: `Block ${mainRoad()}`, done: 'Accident created — an ambulance is on its way', run: blockMainRoad },
   },
   {
     title: 'Ask the AI what to do',
@@ -111,9 +113,9 @@ const STEPS: Step[] = [
       label: 'Ask the copilot',
       done: 'Simulating strategies…',
       run: () => {
-        if (!runtime.sim.state.incidents.some((i) => i.blocks && i.status !== 'resolved')) blockOriental()
+        if (!runtime.sim.state.incidents.some((i) => i.blocks && i.status !== 'resolved')) blockMainRoad()
         useUI.setState({ panel: 'ai' })
-        void ask(ACCIDENT_PROMPT, 'local')
+        void ask(accidentPrompt(), 'local')
       },
     },
   },
@@ -144,6 +146,9 @@ export function Tour() {
   const [acted, setActed] = useState<Record<number, boolean>>({})
   const card = useRef<HTMLDivElement>(null)
   const [cardSize, setCardSize] = useState({ w: 360, h: 220 })
+  const cityId = useUI((st) => st.cityId)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const STEPS = useMemo(buildSteps, [cityId])
   const current = step != null ? STEPS[step] : null
 
   useEffect(() => {
